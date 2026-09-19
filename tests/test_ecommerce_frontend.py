@@ -183,7 +183,8 @@ const {{ describeRuntimeEvent }} = require({json.dumps(str(script_path))});
 const started = describeRuntimeEvent('tool_started', {{tool: 'logistics.get'}});
 const finished = describeRuntimeEvent('tool_finished', {{tool: 'logistics.get', status: 'succeeded'}});
 const confirmation = describeRuntimeEvent('confirmation_required', {{summary: '为订单提交退货申请'}});
-process.stdout.write(JSON.stringify({{ started, finished, confirmation }}));
+const inputRequired = describeRuntimeEvent('input_required', {{summary: '请补充退货原因'}});
+process.stdout.write(JSON.stringify({{ started, finished, confirmation, inputRequired }}));
 """
     result = subprocess.run(
         ["node", "-e", node_program],
@@ -197,4 +198,5 @@ process.stdout.write(JSON.stringify({{ started, finished, confirmation }}));
         "started": {"title": "调用业务工具", "detail": "查询物流"},
         "finished": {"title": "工具执行完成", "detail": "查询物流 · 成功"},
         "confirmation": {"title": "等待用户确认", "detail": "为订单提交退货申请"},
+        "inputRequired": {"title": "等待补充信息", "detail": "请补充退货原因"},
     }

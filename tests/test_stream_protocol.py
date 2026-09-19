@@ -260,3 +260,25 @@ def test_confirmation_event_exposes_summary_but_not_frozen_arguments():
         "tool": "return.create",
         "summary": "为订单提交退货申请",
     }
+    assert events[-1][0] == "turn_ended"
+    assert events[-1][1]["status"] == "needs_input"
+
+
+def test_missing_slot_event_marks_the_turn_as_needing_input():
+    events = _collect(
+        _tokens(
+            '[EVENT]{"type":"input_required","data":{"field":"reason","summary":"请补充退货原因","private":"hidden"}}',
+            "[REPLY][订单售后 Agent]请补充退货原因。",
+        ),
+        "turn-input",
+    )
+
+    required = next(
+        payload for name, payload in events if name == "input_required"
+    )
+    assert required == {
+        "turn_id": "turn-input",
+        "field": "reason",
+        "summary": "请补充退货原因",
+    }
+    assert events[-1][1]["status"] == "needs_input"

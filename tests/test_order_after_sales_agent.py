@@ -96,6 +96,7 @@ def test_return_reason_can_be_completed_in_a_follow_up_turn(tmp_path):
     second = _collect(agent, "原因是商品破损")
 
     assert "请补充退货原因" in _answer(first)
+    assert any(event["type"] == "input_required" for event in _events(first))
     assert "确认提交" in _answer(second)
     assert agent.has_pending_action is True
 

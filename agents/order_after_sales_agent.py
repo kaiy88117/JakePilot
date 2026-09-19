@@ -187,6 +187,15 @@ class OrderAfterSalesAgent:
             )
             if not reason:
                 self.return_draft = ReturnDraft(order_id=order_id)
+                yield self._event_token(
+                    RuntimeEvent(
+                        type="input_required",
+                        data={
+                            "field": "reason",
+                            "summary": "请补充退货原因",
+                        },
+                    )
+                )
                 yield "[REPLY][订单售后 Agent]请补充退货原因。"
                 return
             self.return_draft = None

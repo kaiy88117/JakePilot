@@ -17,6 +17,7 @@ _PUBLIC_RUNTIME_FIELDS = {
         {"tool", "step", "status", "elapsed_ms", "external_ref"}
     ),
     "confirmation_required": frozenset({"tool", "summary"}),
+    "input_required": frozenset({"field", "summary"}),
 }
 
 
@@ -65,26 +66,33 @@ def _route_event(token: str, turn_id: str) -> str | None:
     return None
 
 
-def _runtime_event(token: str, turn_id: str) -> str | None:
+def _runtime_event(
+    token: str, turn_id: str
+) -> tuple[str | None, str | None]:
     """Project one internal runtime event onto the public SSE contract."""
     try:
         event = json.loads(token.removeprefix("[EVENT]"))
     except (TypeError, ValueError, json.JSONDecodeError):
-        return None
+        return None, None
 
     if not isinstance(event, dict):
-        return None
+        return None, None
     event_type = event.get("type")
     allowed_fields = _PUBLIC_RUNTIME_FIELDS.get(event_type)
     data = event.get("data")
     if allowed_fields is None or not isinstance(data, dict):
-        return None
+        return None, None
 
     public_data = {
         key: value for key, value in data.items() if key in allowed_fields
     }
     public_data["turn_id"] = turn_id
-    return encode_sse(event_type, public_data)
+    requested_status = (
+        "needs_input"
+        if event_type in {"confirmation_required", "input_required"}
+        else None
+    )
+    return encode_sse(event_type, public_data), requested_status
 
 
 async def iter_sse_events(
@@ -98,6 +106,7 @@ async def iter_sse_events(
     """
     yield encode_sse("turn_started", {"turn_id": turn_id})
     reply_started = False
+    terminal_status = "completed"
 
     try:
         async for raw_token in tokens:
@@ -106,9 +115,11 @@ async def iter_sse_events(
                 continue
 
             if token.startswith("[EVENT]"):
-                event_frame = _runtime_event(token, turn_id)
+                event_frame, requested_status = _runtime_event(token, turn_id)
                 if event_frame:
                     yield event_frame
+                if requested_status:
+                    terminal_status = requested_status
                 continue
 
             markers = list(_TAG_PATTERN.finditer(token))
@@ -168,4 +179,6 @@ async def iter_sse_events(
         )
         return
 
-    yield encode_sse("turn_ended", {"turn_id": turn_id, "status": "completed"})
+    yield encode_sse(
+        "turn_ended", {"turn_id": turn_id, "status": terminal_status}
+    )

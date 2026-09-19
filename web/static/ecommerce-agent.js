@@ -94,6 +94,9 @@
         if (event === "confirmation_required") {
             return { title: "等待用户确认", detail: payload.summary || "请确认后继续执行" };
         }
+        if (event === "input_required") {
+            return { title: "等待补充信息", detail: payload.summary || "请补充任务信息" };
+        }
         return null;
     }
 
@@ -173,7 +176,7 @@
         } else if (event === "route_selected") {
             currentRoute.textContent = payload.label;
             appendTimeline("完成任务路由", payload.label);
-        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required") {
+        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required") {
             const description = describeRuntimeEvent(event, payload);
             if (description) appendTimeline(description.title, description.detail);
         } else if (event === "answer_delta") {
@@ -181,8 +184,13 @@
             activeAnswer.textContent += payload.delta || "";
             scrollChat();
         } else if (event === "turn_ended") {
-            appendTimeline("任务结束", "回答已完成");
-            setTerminalStatus("completed", "已完成");
+            if (payload.status === "needs_input") {
+                appendTimeline("任务暂停", "等待补充信息或确认");
+                setTerminalStatus("needs-input", "等待输入");
+            } else {
+                appendTimeline("任务结束", "回答已完成");
+                setTerminalStatus("completed", "已完成");
+            }
         } else if (event === "turn_failed") {
             if (!activeAnswer) activeAnswer = createMessage("assistant", "", "message-error");
             if (!activeAnswer.textContent) activeAnswer.textContent = payload.message || "服务暂时不可用，请稍后重试";
