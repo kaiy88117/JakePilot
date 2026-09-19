@@ -1,10 +1,14 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from datetime import datetime
-from datetime import datetime
+from datetime import datetime, timezone
 
 Base = declarative_base()
+
+
+def utc_now_naive() -> datetime:
+    """Return UTC without tzinfo for the existing SQLite DateTime schema."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class Technician(Base):
     __tablename__ = 'technicians'
@@ -66,3 +70,72 @@ class UserRecommendation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     sent_at = Column(DateTime, nullable=True)
     technician = relationship("Technician")
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "order_no", name="uq_order_tenant_no"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    order_no = Column(String, nullable=False, index=True)
+    item_name = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    delivered_at = Column(DateTime, nullable=True)
+    return_policy = Column(String, nullable=False, default="seven_day")
+
+
+class LogisticsEvent(Base):
+    __tablename__ = "logistics_events"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    status = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
+
+
+class AfterSalesRequest(Base):
+    __tablename__ = "after_sales_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_after_sales_tenant_idem"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    request_no = Column(String, nullable=False, unique=True, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    order_no = Column(String, nullable=False, index=True)
+    reason = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    idempotency_key = Column(String, nullable=False)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+
+
+class ActionExecution(Base):
+    __tablename__ = "action_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "idempotency_key", name="uq_action_tenant_idem"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    action_id = Column(String, nullable=False, unique=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    tool_name = Column(String, nullable=False)
+    payload_hash = Column(String, nullable=False)
+    idempotency_key = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    external_ref = Column(String, nullable=True)
+    confirmed_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
