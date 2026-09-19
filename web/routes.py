@@ -41,12 +41,21 @@ async def build_agent_event_stream(
     processor: Callable | None = None,
 ) -> AsyncIterator[str]:
     """Build the public event stream without initializing models on import."""
-    if processor is None:
-        from api.chat_handler import ProcessUserInput_stream
+    try:
+        if processor is None:
+            from api.chat_handler import ProcessUserInput_stream
 
-        processor = ProcessUserInput_stream
+            processor = ProcessUserInput_stream
+        tokens = processor(message)
+    except Exception:
+        logger.exception("Agent 流初始化失败")
 
-    async for frame in iter_sse_events(processor(message), turn_id):
+        async def failed_tokens():
+            yield "[ERROR]Agent 服务初始化失败"
+
+        tokens = failed_tokens()
+
+    async for frame in iter_sse_events(tokens, turn_id):
         yield frame
 
 @router.get("/", response_class=HTMLResponse, summary="主页")

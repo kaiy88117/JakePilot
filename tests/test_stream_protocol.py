@@ -144,3 +144,25 @@ def test_build_agent_event_stream_uses_supplied_processor():
     assert frames[0] == ("turn_started", {"turn_id": "turn-test"})
     assert frames[1][1]["delta"] == "保修期为一年"
     assert frames[-1][0] == "turn_ended"
+
+
+def test_build_agent_event_stream_converts_processor_startup_failure():
+    from web.routes import build_agent_event_stream
+
+    def failing_processor(message: str):
+        raise RuntimeError("SYNTHETIC_PRIVATE_DIAGNOSTIC")
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "测试问题",
+                turn_id="turn-startup-failure",
+                processor=failing_processor,
+            )
+        ]
+
+    frames = asyncio.run(collect())
+    assert [name for name, _ in frames] == ["turn_started", "turn_failed"]
+    assert frames[-1][1]["message"] == "服务处理失败，请稍后重试"
+    assert "SYNTHETIC_PRIVATE_DIAGNOSTIC" not in json.dumps(frames)
