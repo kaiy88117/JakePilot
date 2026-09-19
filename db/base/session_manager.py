@@ -1,5 +1,8 @@
 from contextlib import contextmanager
+from pathlib import Path
+
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker, scoped_session
 from ..models import Base
 
@@ -21,6 +24,10 @@ class SessionManager:
         Args:
             db_path: 数据库连接路径
         """
+        database_url = make_url(db_path)
+        if database_url.get_backend_name() == "sqlite" and database_url.database not in (None, "", ":memory:"):
+            Path(database_url.database).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
         self.engine = create_engine(db_path)
         Base.metadata.create_all(self.engine)
         self.Session = scoped_session(sessionmaker(bind=self.engine))
