@@ -59,9 +59,11 @@ def create_chat_model(temperature: float = 0):
 
     if provider in CHAT_PROVIDERS:
         return ChatOpenAI(
-            model=_env("LLM_MODEL", "qwen-plus") or "qwen-plus",
-            api_key=SecretStr(_env("LLM_API_KEY", "") or ""),
-            base_url=_env("LLM_BASE_URL"),
+            model=_env("LLM_MODEL") or _env("MODEL", "qwen-plus") or "qwen-plus",
+            api_key=SecretStr(
+                _env("LLM_API_KEY") or _env("ARK_API_KEY", "") or ""
+            ),
+            base_url=_env("LLM_BASE_URL") or _env("BASE_URL"),
             temperature=temperature,
         )
 
@@ -83,6 +85,15 @@ def create_embedding_model():
             azure_endpoint=_env("AZURE_OPENAI_ENDPOINT_EMBEDDING"),
         )
 
+    if provider == "ollama":
+        from langchain_ollama import OllamaEmbeddings
+
+        return OllamaEmbeddings(
+            model=_env("EMBEDDING_MODEL", "bge-m3") or "bge-m3",
+            base_url=_env("EMBEDDING_BASE_URL", "http://127.0.0.1:11434")
+            or "http://127.0.0.1:11434",
+        )
+
     if provider in EMBEDDING_PROVIDERS:
         return OpenAIEmbeddings(
             model=_env("EMBEDDING_MODEL", "text-embedding-v3") or "text-embedding-v3",
@@ -95,5 +106,5 @@ def create_embedding_model():
 
     raise ValueError(
         f"Unsupported EMBEDDING_PROVIDER={provider!r}. "
-        "Use azure, qwen, zhipu, openai, or openai-compatible."
+        "Use azure, ollama, qwen, zhipu, openai, or openai-compatible."
     )
