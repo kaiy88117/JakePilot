@@ -169,6 +169,21 @@ class RepeatedLookupPlanner:
         return PlanAction.tool("order.get", {"order_id": "JP20260919001"})
 
 
+class EquivalentLookupPlanner:
+    async def next_action(self, turn, history):
+        from runtime.loop import PlanAction
+
+        return PlanAction.tool(
+            "order.get",
+            {"order_id": "JP20260919001", "ignored": len(history)},
+        )
+
+
+class FailingPlanner:
+    async def next_action(self, turn, history):
+        raise RuntimeError("PRIVATE_PLANNER_DIAGNOSTIC")
+
+
 def _read_registry():
     from runtime.tools import ToolRegistry, ToolResult, ToolRisk, ToolSpec
 
@@ -213,3 +228,59 @@ def test_loop_stops_repeating_the_same_tool_call():
     assert run.outcome.status == TurnStatus.FAILED
     assert sum(event.type == "tool_started" for event in run.events) == 1
     assert run.events[-1].data["reason"] == "repeated_tool_call"
+
+
+def test_loop_detects_equivalent_calls_after_schema_normalization():
+    from runtime.loop import BoundedAgentRuntime
+
+    run = asyncio.run(
+        BoundedAgentRuntime(_read_registry()).run(
+            _turn(), EquivalentLookupPlanner(), _context()
+        )
+    )
+
+    assert run.outcome.status == TurnStatus.FAILED
+    assert sum(event.type == "tool_started" for event in run.events) == 1
+    assert run.events[-1].data["reason"] == "repeated_tool_call"
+
+
+def test_planner_exception_returns_a_sanitized_failed_trace():
+    from runtime.loop import BoundedAgentRuntime
+
+    runtime = BoundedAgentRuntime(_read_registry())
+    run = asyncio.run(runtime.run(_turn(), FailingPlanner(), _context()))
+
+    assert run.outcome.status == TurnStatus.FAILED
+    assert run.events[-1].type == "turn_finished"
+    assert run.events[-1].data["reason"] == "planner_failed"
+    assert "PRIVATE_PLANNER_DIAGNOSTIC" not in repr(run)
+    assert runtime.last_events[-1].data["status"] == "failed"
+
+
+def test_cancellation_preserves_a_cancelled_trace():
+    from runtime.loop import BoundedAgentRuntime, PlanAction
+
+    waiting = asyncio.Event()
+
+    class CancelPlanner:
+        async def next_action(self, turn, history):
+            if not history:
+                return PlanAction.tool("order.get", {"order_id": "JP20260919001"})
+            waiting.set()
+            await asyncio.Event().wait()
+
+    async def scenario():
+        runtime = BoundedAgentRuntime(_read_registry())
+        task = asyncio.create_task(runtime.run(_turn(), CancelPlanner(), _context()))
+        await waiting.wait()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return runtime
+
+    runtime = asyncio.run(scenario())
+    assert any(event.type == "tool_finished" for event in runtime.last_events)
+    assert runtime.last_events[-1].type == "turn_finished"
+    assert runtime.last_events[-1].data["status"] == "cancelled"

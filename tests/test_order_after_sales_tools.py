@@ -57,6 +57,27 @@ def test_return_creation_is_idempotent(tmp_path):
     assert service.count_return_requests() == 1
 
 
+def test_successful_idempotent_replay_does_not_recheck_changed_eligibility(
+    tmp_path, monkeypatch
+):
+    service = _service(tmp_path)
+    first = service.create_return_request(
+        "demo", "user-a", "JP20260919002", "商品破损", "idem-replay", "hash-replay"
+    )
+    monkeypatch.setattr(
+        service,
+        "check_return_eligibility",
+        lambda *args: {"eligible": False, "reason": "return_window_expired"},
+    )
+
+    replay = service.create_return_request(
+        "demo", "user-a", "JP20260919002", "商品破损", "idem-replay", "hash-replay"
+    )
+
+    assert replay["request_id"] == first["request_id"]
+    assert service.count_return_requests() == 1
+
+
 def test_non_returnable_order_never_creates_a_request(tmp_path):
     service = _service(tmp_path)
 

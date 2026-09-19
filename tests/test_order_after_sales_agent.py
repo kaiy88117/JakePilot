@@ -89,6 +89,58 @@ def test_confirmation_executes_the_frozen_action_once(tmp_path):
     assert agent.has_pending_action is False
 
 
+def test_return_reason_can_be_completed_in_a_follow_up_turn(tmp_path):
+    agent = _agent(tmp_path)
+
+    first = _collect(agent, "申请退货 JP20260919002")
+    second = _collect(agent, "原因是商品破损")
+
+    assert "请补充退货原因" in _answer(first)
+    assert "确认提交" in _answer(second)
+    assert agent.has_pending_action is True
+
+
+def test_changing_reason_invalidates_the_old_confirmation(tmp_path):
+    agent = _agent(tmp_path)
+    _collect(agent, "申请退货 JP20260919002，原因是商品破损")
+
+    changed = _collect(agent, "原因改为不喜欢了")
+    confirmed = _collect(agent, "确认提交")
+
+    assert "不喜欢了" in _answer(changed)
+    assert "退货申请" in _answer(confirmed)
+    with agent.service.session_manager.session_scope() as session:
+        from db.models import AfterSalesRequest
+
+        request = session.query(AfterSalesRequest).one()
+        assert request.reason == "不喜欢了"
+
+
+def test_failed_write_preserves_pending_confirmation_for_retry(tmp_path, monkeypatch):
+    agent = _agent(tmp_path)
+    _collect(agent, "申请退货 JP20260919002，原因是商品破损")
+    monkeypatch.setattr(
+        agent.service,
+        "create_return_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("private")),
+    )
+
+    failed = _collect(agent, "确认提交")
+
+    assert any(token.startswith("[ERROR]") for token in failed)
+    assert agent.has_pending_action is True
+
+
+def test_max_length_session_id_still_produces_a_valid_idempotency_key(tmp_path):
+    agent = _agent(tmp_path, session_id="s" * 128)
+
+    _collect(agent, "申请退货 JP20260919002，原因是商品破损")
+    confirmed = _collect(agent, "确认提交")
+
+    assert "退货申请" in _answer(confirmed)
+    assert agent.service.count_return_requests() == 1
+
+
 def test_pending_action_is_isolated_between_agent_sessions(tmp_path):
     service = OrderAfterSalesService(
         f"sqlite:///{(tmp_path / 'shared-orders.db').as_posix()}"

@@ -58,3 +58,25 @@ def test_order_and_return_flow_is_idempotent_and_session_scoped(tmp_path):
     assert "退货申请" in _answer(confirmed)
     assert "当前没有待确认操作" in _answer(repeated)
     assert service.count_return_requests() == 1
+
+
+def test_failed_write_emits_failed_terminal_and_remains_retryable(
+    tmp_path, monkeypatch
+):
+    service = OrderAfterSalesService(
+        f"sqlite:///{(tmp_path / 'e2e-failure.db').as_posix()}"
+    )
+    service.seed_demo_data()
+    agent = OrderAfterSalesAgent("session-a", service, "demo", "user-a")
+    _request(agent, "申请退货 JP20260919002，原因是商品破损")
+    monkeypatch.setattr(
+        service,
+        "create_return_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("private")),
+    )
+
+    failed = _request(agent, "确认提交")
+
+    assert any(name == "turn_failed" for name, _ in failed)
+    assert not any(name == "turn_ended" for name, _ in failed)
+    assert agent.has_pending_action is True

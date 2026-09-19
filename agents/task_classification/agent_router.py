@@ -45,6 +45,17 @@ class AgentRouter:
         
         if self.consultant_agent and hasattr(self.consultant_agent, 'set_shared_state'):
             self.consultant_agent.set_shared_state(self.state_manager.state)
+
+    def _order_flow_active(self) -> bool:
+        if not self.order_after_sales_agent:
+            return False
+        return bool(
+            getattr(
+                self.order_after_sales_agent,
+                "has_active_flow",
+                getattr(self.order_after_sales_agent, "has_pending_action", False),
+            )
+        )
     
     async def route_to_appointment(self, task: str) -> AsyncGenerator[str, None]:
         """
@@ -120,7 +131,7 @@ class AgentRouter:
             self.state_manager.reset_to_classify()
             return
 
-        if not self.order_after_sales_agent.has_pending_action:
+        if not self._order_flow_active():
             self.state_manager.reset_to_classify()
     
     async def handle_unsupported_task(self, category: str) -> AsyncGenerator[str, None]:
@@ -161,7 +172,7 @@ class AgentRouter:
         elif self.state_manager.is_in_order_after_sales_flow():
             async for token in self.order_after_sales_agent.run_stream(task):
                 yield token
-            if not self.order_after_sales_agent.has_pending_action:
+            if not self._order_flow_active():
                 self.state_manager.reset_to_classify()
         else:
             # 状态异常，重置并提示

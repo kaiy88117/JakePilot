@@ -122,6 +122,7 @@ class OrderRepository:
                 session.query(ActionExecution)
                 .filter(
                     ActionExecution.tenant_id == tenant_id,
+                    ActionExecution.user_id == user_id,
                     ActionExecution.idempotency_key == idempotency_key,
                 )
                 .first()
@@ -172,6 +173,42 @@ class OrderRepository:
             session.flush()
             action.status = "succeeded"
             action.external_ref = request.request_no
+            return self._request_to_dict(request)
+
+    def get_completed_action_result(
+        self,
+        tenant_id: str,
+        user_id: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict | None:
+        with self.session_manager.session_scope() as session:
+            action = (
+                session.query(ActionExecution)
+                .filter(
+                    ActionExecution.tenant_id == tenant_id,
+                    ActionExecution.user_id == user_id,
+                    ActionExecution.idempotency_key == idempotency_key,
+                )
+                .first()
+            )
+            if action is None:
+                return None
+            if action.payload_hash != payload_hash:
+                raise ValueError("idempotency key payload mismatch")
+            if action.status != "succeeded" or not action.external_ref:
+                return None
+            request = (
+                session.query(AfterSalesRequest)
+                .filter(
+                    AfterSalesRequest.tenant_id == tenant_id,
+                    AfterSalesRequest.user_id == user_id,
+                    AfterSalesRequest.request_no == action.external_ref,
+                )
+                .first()
+            )
+            if request is None:
+                raise RuntimeError("action ledger has no business result")
             return self._request_to_dict(request)
 
     def count_return_requests(self) -> int:

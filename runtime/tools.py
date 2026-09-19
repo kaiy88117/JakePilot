@@ -88,6 +88,19 @@ class ToolRegistry:
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)
 
+    def normalize_arguments(
+        self, name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Return the schema-approved canonical payload, if it is valid."""
+        spec = self.get(name)
+        if spec is None:
+            return None
+        try:
+            parsed_arguments = spec.args_model.model_validate(arguments)
+        except ValidationError:
+            return None
+        return parsed_arguments.model_dump(mode="json")
+
     async def execute(
         self,
         name: str,
@@ -101,15 +114,14 @@ class ToolRegistry:
                 public_message="请求的工具不可用",
             )
 
-        try:
-            parsed_arguments = spec.args_model.model_validate(arguments)
-        except ValidationError:
+        normalized_arguments = self.normalize_arguments(name, arguments)
+        if normalized_arguments is None:
             return ToolResult(
                 status="invalid_arguments",
                 public_message="工具参数不完整或格式不正确",
             )
 
-        normalized_arguments = parsed_arguments.model_dump(mode="json")
+        parsed_arguments = spec.args_model.model_validate(normalized_arguments)
         payload_hash = canonical_payload_hash(normalized_arguments)
         if spec.risk == ToolRisk.WRITE:
             if context.confirmed_payload_hash is None:

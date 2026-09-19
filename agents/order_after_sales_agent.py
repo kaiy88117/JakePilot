@@ -29,6 +29,12 @@ class PendingAction:
     idempotency_key: str
 
 
+@dataclass(frozen=True)
+class ReturnDraft:
+    order_id: str
+    reason: str = ""
+
+
 class _OrderPlanner:
     def __init__(self, mode: str, order_id: str, reason: str = "") -> None:
         self.mode = mode
@@ -120,6 +126,7 @@ class OrderAfterSalesAgent:
         self.tenant_id = tenant_id
         self.user_id = user_id
         self.pending_action: PendingAction | None = None
+        self.return_draft: ReturnDraft | None = None
         registry = ToolRegistry()
         register_ecommerce_tools(registry, service)
         self.runtime = BoundedAgentRuntime(registry)
@@ -128,10 +135,15 @@ class OrderAfterSalesAgent:
     def has_pending_action(self) -> bool:
         return self.pending_action is not None
 
+    @property
+    def has_active_flow(self) -> bool:
+        return self.pending_action is not None or self.return_draft is not None
+
     async def run_stream(self, message: str):
         normalized = message.strip()
         if normalized in {"取消", "取消操作", "不提交"}:
             self.pending_action = None
+            self.return_draft = None
             yield "[REPLY][订单售后 Agent]已取消当前待确认操作。"
             return
 
@@ -140,27 +152,52 @@ class OrderAfterSalesAgent:
                 yield token
             return
 
+        reason_update = self._extract_reason(normalized)
         order_match = _ORDER_PATTERN.search(normalized.upper())
-        if order_match is None:
+
+        if self.pending_action is not None:
+            previous = self.pending_action
+            self.pending_action = None
+            if reason_update and order_match is None:
+                self.return_draft = ReturnDraft(
+                    order_id=previous.arguments["order_id"],
+                    reason=reason_update,
+                )
+
+        if order_match is not None:
+            order_id = order_match.group(0).upper()
+        elif self.return_draft is not None:
+            order_id = self.return_draft.order_id
+        else:
             yield "[REPLY][订单售后 Agent]请提供 JP 开头的订单号。"
             return
-        order_id = order_match.group(0).upper()
 
         if "物流" in normalized or "到哪" in normalized:
             mode = "logistics"
             reason = ""
-        elif "申请退货" in normalized or "我要退货" in normalized:
+            self.return_draft = None
+        elif (
+            "申请退货" in normalized
+            or "我要退货" in normalized
+            or (self.return_draft is not None and bool(reason_update))
+        ):
             mode = "return"
-            reason = self._extract_reason(normalized)
+            reason = reason_update or (
+                self.return_draft.reason if self.return_draft else ""
+            )
             if not reason:
+                self.return_draft = ReturnDraft(order_id=order_id)
                 yield "[REPLY][订单售后 Agent]请补充退货原因。"
                 return
+            self.return_draft = None
         elif "能退" in normalized or "退货资格" in normalized:
             mode = "eligibility"
             reason = ""
+            self.return_draft = None
         else:
             mode = "order"
             reason = ""
+            self.return_draft = None
 
         turn = self._turn(normalized)
         context = self._context(turn)
@@ -172,13 +209,17 @@ class OrderAfterSalesAgent:
         for event in run.events:
             yield self._event_token(event)
 
+        if run.outcome.status == TurnStatus.FAILED:
+            yield f"[ERROR]{run.outcome.answer}"
+            return
+
         if mode == "return" and run.outcome.status == TurnStatus.NEEDS_INPUT:
             arguments = {"order_id": order_id, "reason": reason}
             self.pending_action = PendingAction(
                 tool_name="return.create",
                 arguments=arguments,
                 payload_hash=canonical_payload_hash(arguments),
-                idempotency_key=f"return-{self.session_id}-{uuid4().hex}",
+                idempotency_key=f"return-{uuid4().hex}",
             )
             yield self._event_token(
                 RuntimeEvent(
@@ -223,6 +264,9 @@ class OrderAfterSalesAgent:
             yield self._event_token(event)
         if run.outcome.status == TurnStatus.COMPLETED:
             self.pending_action = None
+        if run.outcome.status == TurnStatus.FAILED:
+            yield f"[ERROR]{run.outcome.answer}"
+            return
         yield f"[REPLY][订单售后 Agent]{run.outcome.answer}"
 
     def _turn(self, message: str) -> TurnRequest:
@@ -251,7 +295,7 @@ class OrderAfterSalesAgent:
 
     @staticmethod
     def _extract_reason(message: str) -> str:
-        match = re.search(r"(?:原因是|原因[:：]|因为)(.+)$", message)
+        match = re.search(r"(?:原因改为|原因是|原因[:：]|因为)(.+)$", message)
         return match.group(1).strip(" ，。") if match else ""
 
     @staticmethod

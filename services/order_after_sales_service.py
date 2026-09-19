@@ -50,6 +50,14 @@ class OrderAfterSalesService:
         idempotency_key: str,
         payload_hash: str,
     ) -> dict:
+        completed = self.repository.get_completed_action_result(
+            tenant_id,
+            user_id,
+            idempotency_key,
+            payload_hash,
+        )
+        if completed is not None:
+            return completed
         eligibility = self.check_return_eligibility(
             tenant_id, user_id, order_id
         )

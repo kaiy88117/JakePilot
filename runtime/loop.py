@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -59,6 +60,7 @@ class BoundedAgentRuntime:
     ) -> None:
         self.registry = registry
         self.budget = budget or ExecutionBudget()
+        self.last_events: list[RuntimeEvent] = []
 
     async def run(
         self,
@@ -67,6 +69,7 @@ class BoundedAgentRuntime:
         tool_context: ToolContext,
     ) -> RuntimeRun:
         trace = TraceRecorder(turn.turn_id)
+        self.last_events = []
         history: list[tuple[PlanAction, ToolResult | None]] = []
         fingerprints: set[str] = set()
         tool_calls = 0
@@ -85,6 +88,7 @@ class BoundedAgentRuntime:
             if reason:
                 event_data["reason"] = reason
             trace.record(RuntimeEvent(type="turn_finished", data=event_data))
+            self.last_events = trace.snapshot()
             return RuntimeRun(
                 outcome=TurnOutcome(
                     status=status,
@@ -97,7 +101,28 @@ class BoundedAgentRuntime:
             )
 
         for step in range(1, self.budget.max_steps + 1):
-            action = await planner.next_action(turn, history)
+            try:
+                action = await planner.next_action(turn, history)
+            except asyncio.CancelledError:
+                trace.record(
+                    RuntimeEvent(
+                        type="turn_finished",
+                        data={
+                            "status": TurnStatus.CANCELLED.value,
+                            "step": max(step - 1, 0),
+                            "reason": "cancelled",
+                        },
+                    )
+                )
+                self.last_events = trace.snapshot()
+                raise
+            except Exception:
+                return finish(
+                    TurnStatus.FAILED,
+                    "任务规划失败，请稍后重试",
+                    max(step - 1, 0),
+                    "planner_failed",
+                )
             trace.record(
                 RuntimeEvent(
                     type="plan_selected",
@@ -131,8 +156,18 @@ class BoundedAgentRuntime:
                     "invalid_plan",
                 )
 
+            normalized_arguments = self.registry.normalize_arguments(
+                action.tool_name, action.arguments
+            )
             fingerprint = canonical_payload_hash(
-                {"tool": action.tool_name, "arguments": action.arguments}
+                {
+                    "tool": action.tool_name,
+                    "arguments": (
+                        normalized_arguments
+                        if normalized_arguments is not None
+                        else action.arguments
+                    ),
+                }
             )
             if fingerprint in fingerprints:
                 return finish(
@@ -158,11 +193,25 @@ class BoundedAgentRuntime:
                     data={"tool": action.tool_name, "step": step},
                 )
             )
-            result = await self.registry.execute(
-                action.tool_name,
-                action.arguments,
-                tool_context,
-            )
+            try:
+                result = await self.registry.execute(
+                    action.tool_name,
+                    action.arguments,
+                    tool_context,
+                )
+            except asyncio.CancelledError:
+                trace.record(
+                    RuntimeEvent(
+                        type="turn_finished",
+                        data={
+                            "status": TurnStatus.CANCELLED.value,
+                            "step": step,
+                            "reason": "cancelled",
+                        },
+                    )
+                )
+                self.last_events = trace.snapshot()
+                raise
             trace.record(
                 RuntimeEvent(
                     type="tool_finished",
@@ -174,6 +223,14 @@ class BoundedAgentRuntime:
                 )
             )
             history.append((action, result))
+
+            if result.status in {"failed", "invalid_arguments"}:
+                return finish(
+                    TurnStatus.FAILED,
+                    result.public_message or "工具执行失败，请稍后重试",
+                    step,
+                    f"tool_{result.status}",
+                )
 
             if result.status == "confirmation_required":
                 return finish(
