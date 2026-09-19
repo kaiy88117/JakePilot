@@ -4,6 +4,7 @@ Web界面路由
 处理前端页面渲染和聊天功能
 """
 import uuid
+import re
 from collections.abc import AsyncIterator, Callable
 
 from fastapi import APIRouter, Request
@@ -25,6 +26,7 @@ router = APIRouter(tags=["Web界面"])
 class ChatRequest(BaseModel):
     message: str
     state: str | None = None
+    session_id: str | None = None
 
     @field_validator("message")
     @classmethod
@@ -34,19 +36,32 @@ class ChatRequest(BaseModel):
             raise ValueError("message must not be blank")
         return message
 
+    @field_validator("session_id")
+    @classmethod
+    def validate_session_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        session_id = value.strip()
+        if not session_id or len(session_id) > 128:
+            raise ValueError("invalid session_id")
+        if not re.fullmatch(r"[A-Za-z0-9._:-]+", session_id):
+            raise ValueError("invalid session_id")
+        return session_id
+
 
 async def build_agent_event_stream(
     message: str,
     turn_id: str,
     processor: Callable | None = None,
+    session_id: str | None = None,
 ) -> AsyncIterator[str]:
     """Build the public event stream without initializing models on import."""
     try:
         if processor is None:
             from api.chat_handler import ProcessUserInput_stream
-
-            processor = ProcessUserInput_stream
-        tokens = processor(message)
+            tokens = ProcessUserInput_stream(message, session_id=session_id)
+        else:
+            tokens = processor(message)
     except Exception:
         logger.exception("Agent 流初始化失败")
 
@@ -69,7 +84,9 @@ async def chat_stream_endpoint(chat: ChatRequest):
     from api.chat_handler import ProcessUserInput_stream
 
     async def token_generator():
-        async for token in ProcessUserInput_stream(chat.message):
+        async for token in ProcessUserInput_stream(
+            chat.message, session_id=chat.session_id
+        ):
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 
@@ -79,7 +96,11 @@ async def agent_chat_stream_endpoint(chat: ChatRequest):
     """以结构化 SSE 事件返回 Agent 的公开执行状态和回答。"""
     turn_id = f"turn_{uuid.uuid4().hex}"
     return StreamingResponse(
-        build_agent_event_stream(chat.message, turn_id),
+        build_agent_event_stream(
+            chat.message,
+            turn_id,
+            session_id=chat.session_id,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -93,7 +114,9 @@ async def chat_endpoint(chat: ChatRequest):
     from api.chat_handler import ProcessUserInput_stream
 
     async def token_generator():
-        async for token in ProcessUserInput_stream(chat.message):
+        async for token in ProcessUserInput_stream(
+            chat.message, session_id=chat.session_id
+        ):
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 

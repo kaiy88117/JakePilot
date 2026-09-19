@@ -164,6 +164,34 @@ def test_build_agent_event_stream_uses_supplied_processor():
     assert frames[-1][0] == "turn_ended"
 
 
+def test_build_agent_event_stream_forwards_session_id(monkeypatch):
+    import api.chat_handler as chat_handler
+    from web.routes import build_agent_event_stream
+
+    captured = {}
+
+    async def fake_processor(message: str, session_id: str | None = None):
+        captured["message"] = message
+        captured["session_id"] = session_id
+        yield "[REPLY][咨询机器人]已隔离"
+
+    monkeypatch.setattr(chat_handler, "ProcessUserInput_stream", fake_processor)
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "查询订单",
+                turn_id="turn-session",
+                session_id="session-a",
+            )
+        ]
+
+    frames = asyncio.run(collect())
+    assert captured == {"message": "查询订单", "session_id": "session-a"}
+    assert frames[-1][0] == "turn_ended"
+
+
 def test_build_agent_event_stream_converts_processor_startup_failure():
     from web.routes import build_agent_event_stream
 

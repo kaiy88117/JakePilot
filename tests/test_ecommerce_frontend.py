@@ -122,3 +122,55 @@ def test_app_metadata_identifies_the_ecommerce_agent_platform():
 
     assert app.title == "JakePilot"
     assert app.description == "面向电商售后的中心路由式多 Agent 服务平台"
+
+
+def test_frontend_creates_and_sends_an_isolated_session_id():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ createSessionId, buildChatPayload }} = require({json.dumps(str(script_path))});
+const first = createSessionId();
+const second = createSessionId();
+process.stdout.write(JSON.stringify({{ first, second, payload: buildChatPayload('查询订单', first) }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    parsed = json.loads(result.stdout)
+
+    assert parsed["first"] != parsed["second"]
+    assert parsed["payload"] == {
+        "message": "查询订单",
+        "session_id": parsed["first"],
+    }
+    assert "新对话" in " ".join(_render_homepage().text)
+
+
+def test_new_conversation_invalidates_the_previous_request():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ createRequestGuard }} = require({json.dumps(str(script_path))});
+const guard = createRequestGuard();
+const oldRequest = guard.begin();
+const before = guard.isCurrent(oldRequest);
+guard.invalidate();
+const after = guard.isCurrent(oldRequest);
+const newRequest = guard.begin();
+process.stdout.write(JSON.stringify({{ before, after, current: guard.isCurrent(newRequest) }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert json.loads(result.stdout) == {
+        "before": True,
+        "after": False,
+        "current": True,
+    }

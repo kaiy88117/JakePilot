@@ -1,17 +1,103 @@
-from agents.task_classification_agent import TaskClassificationAgent
+import asyncio
+from collections import OrderedDict
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from typing import Any
+
 from agents.appointment_agent import AppointmentAgent
 from agents.consultant_agent import ConsultantAgent
-import uuid
+from agents.task_classification_agent import TaskClassificationAgent
 
-# 全局session_id用于单用户场景
-global_session_id = str(uuid.uuid4())
 
-task_agent = TaskClassificationAgent(
-    AppointmentAgent(session_id=global_session_id), 
-    ConsultantAgent(session_id=global_session_id)
-)
+LEGACY_SESSION_ID = "legacy-default"
 
-async def ProcessUserInput_stream(user_input, state=None, context=None):
+
+class SessionRegistryFull(RuntimeError):
+    """Raised when every bounded session slot is currently active."""
+
+
+@dataclass
+class _SessionEntry:
+    agent: Any
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    users: int = 0
+
+
+def _create_task_agent(session_id: str) -> TaskClassificationAgent:
+    """Create one stateful agent graph for a single browser session."""
+    return TaskClassificationAgent(
+        AppointmentAgent(session_id=session_id),
+        ConsultantAgent(session_id=session_id),
+    )
+
+
+class AgentSessionRegistry:
+    """Bounded process-local registry for stateful conversation agents."""
+
+    def __init__(
+        self,
+        factory: Callable[[str], Any] = _create_task_agent,
+        max_sessions: int = 100,
+    ) -> None:
+        if max_sessions < 1:
+            raise ValueError("max_sessions must be at least 1")
+        self._factory = factory
+        self._max_sessions = max_sessions
+        self._entries: OrderedDict[str, _SessionEntry] = OrderedDict()
+
+    def _get_or_create(self, session_id: str) -> _SessionEntry:
+        entry = self._entries.get(session_id)
+        if entry is not None:
+            self._entries.move_to_end(session_id)
+            return entry
+
+        if len(self._entries) >= self._max_sessions:
+            idle_session_id = next(
+                (
+                    candidate_id
+                    for candidate_id, candidate in self._entries.items()
+                    if candidate.users == 0 and not candidate.lock.locked()
+                ),
+                None,
+            )
+            if idle_session_id is None:
+                raise SessionRegistryFull("all session slots are active")
+            self._entries.pop(idle_session_id)
+
+        entry = _SessionEntry(agent=self._factory(session_id))
+        self._entries[session_id] = entry
+        return entry
+
+    def get(self, session_id: str) -> Any:
+        return self._get_or_create(session_id).agent
+
+    @asynccontextmanager
+    async def acquire(self, session_id: str):
+        entry = self._get_or_create(session_id)
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield entry.agent
+        finally:
+            entry.users -= 1
+
+    def reset(self, session_id: str) -> None:
+        entry = self._entries.get(session_id)
+        if entry is not None and (entry.users > 0 or entry.lock.locked()):
+            raise RuntimeError("cannot reset an active session")
+        self._entries.pop(session_id, None)
+
+
+session_registry = AgentSessionRegistry()
+
+
+async def ProcessUserInput_stream(
+    user_input,
+    state=None,
+    context=None,
+    session_id: str | None = None,
+):
     """
     user_input: 用户输入
     state: 当前对话状态（如 None, 'classify', 'appointment', 'query', ...）
@@ -22,5 +108,6 @@ async def ProcessUserInput_stream(user_input, state=None, context=None):
     if context is None:
         context = {}
 
-    async for token in task_agent.classify_task_stream(user_input):
-        yield token
+    async with session_registry.acquire(session_id or LEGACY_SESSION_ID) as task_agent:
+        async for token in task_agent.classify_task_stream(user_input):
+            yield token

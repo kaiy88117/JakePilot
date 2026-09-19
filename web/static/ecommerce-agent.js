@@ -43,7 +43,42 @@
         if (!terminalReceived) throw new Error("Stream ended without terminal event");
     }
 
-    if (typeof module !== "undefined" && module.exports) module.exports = { parseSseChunk, consumeSseResponse };
+    function createSessionId() {
+        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+            return globalThis.crypto.randomUUID();
+        }
+        return `session_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+
+    function buildChatPayload(message, sessionId) {
+        return { message, session_id: sessionId };
+    }
+
+    function createRequestGuard() {
+        let generation = 0;
+        return {
+            begin() {
+                generation += 1;
+                return generation;
+            },
+            invalidate() {
+                generation += 1;
+            },
+            isCurrent(requestGeneration) {
+                return requestGeneration === generation;
+            }
+        };
+    }
+
+    if (typeof module !== "undefined" && module.exports) {
+        module.exports = {
+            parseSseChunk,
+            consumeSseResponse,
+            createSessionId,
+            buildChatPayload,
+            createRequestGuard
+        };
+    }
     if (typeof document === "undefined") return;
 
     const chatLog = document.getElementById("chat-log");
@@ -55,6 +90,9 @@
     const currentRoute = document.getElementById("current-route");
     const turnStatus = document.getElementById("turn-status");
     let activeAnswer = null;
+    let activeSessionId = createSessionId();
+    let activeController = null;
+    const requestGuard = createRequestGuard();
 
     function scrollChat() {
         chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: "smooth" });
@@ -123,6 +161,11 @@
     }
 
     async function submitMessage(message) {
+        if (activeController) activeController.abort();
+        const requestGeneration = requestGuard.begin();
+        const requestSessionId = activeSessionId;
+        const controller = new AbortController();
+        activeController = controller;
         createMessage("user", message);
         activeAnswer = null;
         sendButton.disabled = true;
@@ -131,19 +174,26 @@
             const response = await fetch("/api/chat/stream", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message })
+                body: JSON.stringify(buildChatPayload(message, requestSessionId)),
+                signal: controller.signal
             });
-            await consumeSseResponse(response, handleEvent);
+            await consumeSseResponse(response, (event) => {
+                if (requestGuard.isCurrent(requestGeneration)) handleEvent(event);
+            });
         } catch (error) {
+            if (!requestGuard.isCurrent(requestGeneration)) return;
             if (!activeAnswer) activeAnswer = createMessage("assistant", "", "message-error");
             if (!activeAnswer.textContent) activeAnswer.textContent = "连接中断，未能完成本次请求。请稍后重试。";
             appendTimeline("连接中断", "请求未完整返回，可重新发送");
             setTerminalStatus("failed", "需重试");
             console.error("Agent stream failed", error);
         } finally {
-            sendButton.disabled = false;
-            sendButton.firstElementChild.textContent = "发送";
-            input.focus();
+            if (requestGuard.isCurrent(requestGeneration)) {
+                activeController = null;
+                sendButton.disabled = false;
+                sendButton.firstElementChild.textContent = "发送";
+                input.focus();
+            }
         }
     }
 
@@ -167,6 +217,10 @@
         });
     });
     clearButton.addEventListener("click", () => {
+        requestGuard.invalidate();
+        if (activeController) activeController.abort();
+        activeController = null;
+        activeSessionId = createSessionId();
         chatLog.querySelectorAll(".message:not([data-welcome='true'])").forEach((node) => node.remove());
         const empty = document.createElement("li");
         empty.className = "timeline-empty";
@@ -174,6 +228,8 @@
         timeline.replaceChildren(empty);
         currentRoute.textContent = "等待用户消息";
         setTerminalStatus("idle", "待命");
+        sendButton.disabled = false;
+        sendButton.firstElementChild.textContent = "发送";
         activeAnswer = null;
         input.focus();
     });
