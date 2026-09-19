@@ -212,3 +212,51 @@ def test_build_agent_event_stream_converts_processor_startup_failure():
     assert [name for name, _ in frames] == ["turn_started", "turn_failed"]
     assert frames[-1][1]["message"] == "服务处理失败，请稍后重试"
     assert "SYNTHETIC_PRIVATE_DIAGNOSTIC" not in json.dumps(frames)
+
+
+def test_runtime_tool_events_are_allowlisted_and_arguments_are_hidden():
+    events = _collect(
+        _tokens(
+            "[THOUGHT][归类机器人] 已识别为订单售后任务，转交订单售后 Agent 处理。",
+            '[EVENT]{"type":"tool_started","data":{"tool":"logistics.get","step":1,"arguments":{"order_id":"JP20260919001"},"phone":"13800138000"}}',
+            '[EVENT]{"type":"tool_finished","data":{"tool":"logistics.get","step":1,"status":"succeeded","private_result":"secret"}}',
+            "[REPLY][订单售后 Agent]物流查询完成",
+        ),
+        "turn-tools",
+    )
+
+    assert [name for name, _ in events] == [
+        "turn_started",
+        "route_selected",
+        "tool_started",
+        "tool_finished",
+        "answer_delta",
+        "turn_ended",
+    ]
+    assert events[1][1]["route"] == "order_after_sales"
+    assert events[2][1] == {
+        "turn_id": "turn-tools",
+        "tool": "logistics.get",
+        "step": 1,
+    }
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert "arguments" not in serialized
+    assert "13800138000" not in serialized
+    assert "private_result" not in serialized
+
+
+def test_confirmation_event_exposes_summary_but_not_frozen_arguments():
+    events = _collect(
+        _tokens(
+            '[EVENT]{"type":"confirmation_required","data":{"tool":"return.create","summary":"为订单提交退货申请","order_id":"JP20260919002","payload_hash":"private"}}',
+            "[REPLY][订单售后 Agent]请确认提交",
+        ),
+        "turn-confirm",
+    )
+
+    confirmation = next(payload for name, payload in events if name == "confirmation_required")
+    assert confirmation == {
+        "turn_id": "turn-confirm",
+        "tool": "return.create",
+        "summary": "为订单提交退货申请",
+    }

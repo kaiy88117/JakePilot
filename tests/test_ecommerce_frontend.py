@@ -174,3 +174,27 @@ process.stdout.write(JSON.stringify({{ before, after, current: guard.isCurrent(n
         "after": False,
         "current": True,
     }
+
+
+def test_frontend_describes_runtime_tool_and_confirmation_events():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ describeRuntimeEvent }} = require({json.dumps(str(script_path))});
+const started = describeRuntimeEvent('tool_started', {{tool: 'logistics.get'}});
+const finished = describeRuntimeEvent('tool_finished', {{tool: 'logistics.get', status: 'succeeded'}});
+const confirmation = describeRuntimeEvent('confirmation_required', {{summary: '为订单提交退货申请'}});
+process.stdout.write(JSON.stringify({{ started, finished, confirmation }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert json.loads(result.stdout) == {
+        "started": {"title": "调用业务工具", "detail": "查询物流"},
+        "finished": {"title": "工具执行完成", "detail": "查询物流 · 成功"},
+        "confirmation": {"title": "等待用户确认", "detail": "为订单提交退货申请"},
+    }

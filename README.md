@@ -1,24 +1,24 @@
 # JakePilot
 
-JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台。当前版本保留 FastAPI、LangChain、FAISS 与 SQLite 基线，并新增结构化 SSE 工作台，用真实事件展示任务开始、Agent 路由、回答和终止状态。
+JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台。当前版本保留 FastAPI、LangChain、FAISS 与 SQLite 基线，并以统一运行时承载知识咨询、订单售后和上门服务预约三类任务。
 
 ## 当前已实现
 
-- 中心任务分类 Agent，将电商售后请求路由到知识咨询或上门服务预约 Agent。
+- 中心任务分类 Agent，将请求路由到知识咨询、订单售后或上门服务预约 Agent。
 - 基于 Ollama `bge-m3`、FAISS 与电商售后种子知识的流式咨询链路。
+- 统一 Turn、Outcome 与 Trace 契约，以及最多 6 步、8 次工具调用、2 次重规划的有界执行循环。
+- `order.get`、`logistics.get`、`return.check`、`return.create` 四个 Schema 工具，使用匿名 SQLite 演示数据完成订单查询、物流追踪和退货办理。
+- 写操作二次确认、参数冻结、Action Ledger 幂等保护，以及按会话隔离的待确认操作。
 - 上门安装或维修的多轮信息补全、工程师匹配、时间检查与 SQLite 写入。
-- `/api/chat/stream` 结构化 SSE 协议，过滤内部 `THOUGHT` 与 `SIGNAL` 标记。
-- 电商售后工作台首页，支持快捷问题、流式回答、真实路由时间线和移动端布局。
+- `/api/chat/stream` 结构化 SSE 协议，过滤内部思维标记，只公开路由、工具状态、确认请求、回答和终止事件。
+- 电商售后工作台首页，支持快捷问题、流式回答、运行时间线和移动端布局。
 - 旧 `/chat/stream` 与 `/chat` 文本流接口继续保留。
-
-当前已完成知识咨询与上门服务预约的电商领域迁移。订单、物流和退款仍未接入真实业务工具，系统只提供政策说明和能力边界，不伪造实时状态或写操作成功。
 
 ## 规划中
 
-- 订单、物流、退换货、维修和上门安装的确定性工具与写操作确认。
 - HermesRAG 适配器，包括答案、引用、证据充分性和管理员 Trace。
 - Working、Episodic、Profile 三层记忆与 Context Engine。
-- 有界 Agent Loop、Checkpoint、幂等、异常恢复及轨迹级评测。
+- Checkpoint、异常恢复及轨迹级评测。
 - 面向预约槽位抽取与下一动作选择的本地小模型后训练。
 
 详细设计见 `docs/superpowers/specs/2026-09-17-ecommerce-agent-architecture-design.md`。
@@ -32,7 +32,8 @@ SSE 安全适配层
    ↓
 Task Classification Agent
    ├─ Consultation Agent → FAISS → 流式知识回答
-   └─ Appointment Agent  → 槽位补全 → 可用性检查 → 预约写入
+   ├─ Order After-sales Agent → 有界 Loop → 订单/物流/退货工具
+   └─ Appointment Agent       → 槽位补全 → 可用性检查 → 预约写入
 ```
 
 SSE 适配层只公开可解释的运行事件，不向用户展示模型隐藏思维链。
@@ -58,17 +59,17 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8001
 
 - `耳机保修期多久？`
 - `帮我查询订单 JP20260919001 的物流`
-- `这个商品想申请退货`
+- `申请退货 JP20260919002，原因是商品破损`，随后回复 `确认提交`
 - `预约周六上午上门安装空调`
 
-前两类电商业务工具尚在规划中，当前路由可能返回能力边界提示；预约类问题可用于演示现有多轮链路。演示结果应以实际运行输出为准。
+订单号、物流节点和退货记录均为本地匿名演示数据，不连接真实电商系统。当前聊天入口使用演示租户与演示用户身份；演示结果应以实际运行输出为准。
 
 ## 测试
 
-离线验证本次 SSE 与前端改造：
+离线验证运行时、订单售后、SSE 与前端链路：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_stream_protocol.py tests/test_ecommerce_frontend.py -v
+.\.venv\Scripts\python.exe -m pytest tests/test_runtime_contracts.py tests/test_tool_runtime.py tests/test_order_after_sales_tools.py tests/test_order_after_sales_agent.py tests/test_order_after_sales_e2e.py tests/test_stream_protocol.py tests/test_ecommerce_frontend.py -v
 ```
 
 完整测试：

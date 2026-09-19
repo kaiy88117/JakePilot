@@ -11,6 +11,14 @@ _TAG_PATTERN = re.compile(
     r"\[(THOUGHT|REPLY|ERROR|SIGNAL)\](?:\[[^\]]+\])?"
 )
 
+_PUBLIC_RUNTIME_FIELDS = {
+    "tool_started": frozenset({"tool", "step"}),
+    "tool_finished": frozenset(
+        {"tool", "step", "status", "elapsed_ms", "external_ref"}
+    ),
+    "confirmation_required": frozenset({"tool", "summary"}),
+}
+
 
 def encode_sse(event: str, payload: dict) -> str:
     """Encode one JSON payload as an SSE frame."""
@@ -19,6 +27,15 @@ def encode_sse(event: str, payload: dict) -> str:
 
 
 def _route_event(token: str, turn_id: str) -> str | None:
+    if "订单售后任务" in token and "订单售后 Agent" in token:
+        return encode_sse(
+            "route_selected",
+            {
+                "turn_id": turn_id,
+                "route": "order_after_sales",
+                "label": "订单售后 Agent",
+            },
+        )
     if (
         "预约任务" in token and "预约机器人" in token
     ) or (
@@ -48,6 +65,28 @@ def _route_event(token: str, turn_id: str) -> str | None:
     return None
 
 
+def _runtime_event(token: str, turn_id: str) -> str | None:
+    """Project one internal runtime event onto the public SSE contract."""
+    try:
+        event = json.loads(token.removeprefix("[EVENT]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(event, dict):
+        return None
+    event_type = event.get("type")
+    allowed_fields = _PUBLIC_RUNTIME_FIELDS.get(event_type)
+    data = event.get("data")
+    if allowed_fields is None or not isinstance(data, dict):
+        return None
+
+    public_data = {
+        key: value for key, value in data.items() if key in allowed_fields
+    }
+    public_data["turn_id"] = turn_id
+    return encode_sse(event_type, public_data)
+
+
 async def iter_sse_events(
     tokens: AsyncIterable[str], turn_id: str
 ) -> AsyncIterator[str]:
@@ -64,6 +103,12 @@ async def iter_sse_events(
         async for raw_token in tokens:
             token = str(raw_token or "")
             if not token:
+                continue
+
+            if token.startswith("[EVENT]"):
+                event_frame = _runtime_event(token, turn_id)
+                if event_frame:
+                    yield event_frame
                 continue
 
             markers = list(_TAG_PATTERN.finditer(token))

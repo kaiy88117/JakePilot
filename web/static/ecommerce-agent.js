@@ -70,13 +70,41 @@
         };
     }
 
+    function describeRuntimeEvent(event, payload = {}) {
+        const toolLabels = {
+            "order.get": "查询订单",
+            "logistics.get": "查询物流",
+            "return.check": "核验退货条件",
+            "return.create": "提交退货申请"
+        };
+        const statusLabels = {
+            succeeded: "成功",
+            failed: "失败",
+            not_found: "未找到",
+            confirmation_required: "等待确认"
+        };
+        const toolLabel = toolLabels[payload.tool] || "业务工具";
+        if (event === "tool_started") {
+            return { title: "调用业务工具", detail: toolLabel };
+        }
+        if (event === "tool_finished") {
+            const statusLabel = statusLabels[payload.status] || "已完成";
+            return { title: "工具执行完成", detail: `${toolLabel} · ${statusLabel}` };
+        }
+        if (event === "confirmation_required") {
+            return { title: "等待用户确认", detail: payload.summary || "请确认后继续执行" };
+        }
+        return null;
+    }
+
     if (typeof module !== "undefined" && module.exports) {
         module.exports = {
             parseSseChunk,
             consumeSseResponse,
             createSessionId,
             buildChatPayload,
-            createRequestGuard
+            createRequestGuard,
+            describeRuntimeEvent
         };
     }
     if (typeof document === "undefined") return;
@@ -145,6 +173,9 @@
         } else if (event === "route_selected") {
             currentRoute.textContent = payload.label;
             appendTimeline("完成任务路由", payload.label);
+        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required") {
+            const description = describeRuntimeEvent(event, payload);
+            if (description) appendTimeline(description.title, description.detail);
         } else if (event === "answer_delta") {
             if (!activeAnswer) activeAnswer = createMessage("assistant", "");
             activeAnswer.textContent += payload.delta || "";
