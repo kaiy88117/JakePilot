@@ -20,7 +20,30 @@
         return { events, rest: pending };
     }
 
-    if (typeof module !== "undefined" && module.exports) module.exports = { parseSseChunk };
+    async function consumeSseResponse(response, onEvent) {
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let rest = "";
+        let terminalReceived = false;
+        while (true) {
+            const { done, value } = await reader.read();
+            const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
+            const parsed = parseSseChunk(rest, chunk);
+            rest = parsed.rest;
+            for (const message of parsed.events) {
+                if (message.event === "turn_ended" || message.event === "turn_failed") {
+                    terminalReceived = true;
+                }
+                onEvent(message);
+            }
+            if (done) break;
+        }
+        if (rest.trim()) throw new Error("Incomplete SSE frame");
+        if (!terminalReceived) throw new Error("Stream ended without terminal event");
+    }
+
+    if (typeof module !== "undefined" && module.exports) module.exports = { parseSseChunk, consumeSseResponse };
     if (typeof document === "undefined") return;
 
     const chatLog = document.getElementById("chat-log");
@@ -110,20 +133,7 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message })
             });
-            if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            let rest = "";
-            while (true) {
-                const { done, value } = await reader.read();
-                const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
-                const parsed = parseSseChunk(rest, chunk);
-                rest = parsed.rest;
-                parsed.events.forEach(handleEvent);
-                if (done) break;
-            }
-            if (rest.trim()) throw new Error("Incomplete SSE frame");
+            await consumeSseResponse(response, handleEvent);
         } catch (error) {
             if (!activeAnswer) activeAnswer = createMessage("assistant", "", "message-error");
             if (!activeAnswer.textContent) activeAnswer.textContent = "连接中断，未能完成本次请求。请稍后重试。";

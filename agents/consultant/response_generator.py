@@ -4,9 +4,13 @@
 负责生成AI响应内容
 """
 
+import logging
 from typing import Dict, Any, AsyncGenerator
 from langchain_core.language_models.chat_models import BaseChatModel
 from .prompt_builder import PromptBuilder
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResponseGenerator:
@@ -37,11 +41,9 @@ class ResponseGenerator:
             for char in content:
                 yield char
                 
-        except Exception as e:
-            error_msg = f"抱歉，处理您的问题时出现了错误：{str(e)}"
-            yield "[REPLY][咨询机器人]"
-            for char in error_msg:
-                yield char
+        except Exception:
+            logger.exception("咨询回答生成失败")
+            yield "[ERROR]咨询服务暂时不可用，请稍后重试"
     
     def create_unrelated_message(self) -> str:
         """创建与咨询无关的回复消息"""

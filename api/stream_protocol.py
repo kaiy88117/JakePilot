@@ -7,8 +7,9 @@ import re
 from collections.abc import AsyncIterable, AsyncIterator
 
 
-_REPLY_PREFIX = re.compile(r"^\[REPLY\](?:\[[^\]]+\])?")
-_ERROR_PREFIX = re.compile(r"^\[ERROR\]")
+_TAG_PATTERN = re.compile(
+    r"\[(THOUGHT|REPLY|ERROR|SIGNAL)\](?:\[[^\]]+\])?"
+)
 
 
 def encode_sse(event: str, payload: dict) -> str:
@@ -57,31 +58,46 @@ async def iter_sse_events(
             if not token:
                 continue
 
-            if token.startswith("[THOUGHT]"):
-                route_frame = _route_event(token, turn_id)
-                if route_frame:
-                    yield route_frame
-                continue
-
-            if token.startswith("[SIGNAL]"):
+            markers = list(_TAG_PATTERN.finditer(token))
+            if markers:
+                for index, marker in enumerate(markers):
+                    section = token[marker.end() : markers[index + 1].start() if index + 1 < len(markers) else len(token)]
+                    kind = marker.group(1)
+                    if kind == "THOUGHT":
+                        route_frame = _route_event(marker.group(0) + section, turn_id)
+                        if route_frame:
+                            yield route_frame
+                    elif kind == "REPLY":
+                        reply_started = True
+                        if section:
+                            yield encode_sse(
+                                "answer_delta",
+                                {"turn_id": turn_id, "delta": section},
+                            )
+                    elif kind == "ERROR":
+                        yield encode_sse(
+                            "turn_failed",
+                            {
+                                "turn_id": turn_id,
+                                "status": "failed",
+                                "message": "服务处理失败，请稍后重试",
+                            },
+                        )
+                        return
                 continue
 
             if token.startswith("[ERROR]"):
-                message = _ERROR_PREFIX.sub("", token, count=1).strip()
                 yield encode_sse(
                     "turn_failed",
                     {
                         "turn_id": turn_id,
                         "status": "failed",
-                        "message": message or "服务处理失败，请稍后重试",
+                        "message": "服务处理失败，请稍后重试",
                     },
                 )
                 return
 
-            if token.startswith("[REPLY]"):
-                reply_started = True
-                token = _REPLY_PREFIX.sub("", token, count=1)
-            elif token.startswith("[") and not reply_started:
+            if token.startswith("[") and not reply_started:
                 continue
 
             if reply_started and token:

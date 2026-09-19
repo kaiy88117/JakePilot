@@ -4,10 +4,14 @@
 负责协调整个咨询流程
 """
 
+import logging
 from typing import AsyncGenerator, Dict, Any
 from .knowledge_retriever import KnowledgeRetriever
 from .consultation_classifier import ConsultationClassifier
 from .response_generator import ResponseGenerator
+
+
+logger = logging.getLogger(__name__)
 
 
 class ConsultationProcessor:
@@ -43,8 +47,9 @@ class ConsultationProcessor:
             # 3. 记录用户行为
             await self._record_consultation_behavior(user_input, knowledge_docs, session_id)
             
-        except Exception as e:
-            yield f"[REPLY][咨询机器人]抱歉，处理您的问题时出现了错误：{str(e)}"
+        except Exception:
+            logger.exception("咨询流程执行失败")
+            yield "[ERROR]咨询服务暂时不可用，请稍后重试"
     
     async def handle_unrelated_request(self, user_input: str, unrelated_callback, shared_state) -> AsyncGenerator[str, None]:
         """处理与咨询无关的请求"""

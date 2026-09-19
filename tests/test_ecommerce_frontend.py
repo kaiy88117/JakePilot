@@ -90,6 +90,33 @@ process.stdout.write(JSON.stringify({{ first, second }}));
     assert parsed["second"]["rest"] == ""
 
 
+def test_javascript_consumer_rejects_eof_without_terminal_event():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ consumeSseResponse }} = require({json.dumps(str(script_path))});
+const chunks = [
+  Buffer.from('event: turn_started\\ndata: {{"turn_id":"t1"}}\\n\\nevent: answer_delta\\ndata: {{"turn_id":"t1","delta":"部分回答"}}\\n\\n')
+];
+const response = {{
+  ok: true,
+  status: 200,
+  body: {{ getReader() {{ return {{ async read() {{ return chunks.length ? {{done:false,value:chunks.shift()}} : {{done:true}}; }} }}; }} }}
+}};
+consumeSseResponse(response, () => {{}})
+  .then(() => process.stdout.write('resolved'))
+  .catch((error) => process.stdout.write(error.message));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert result.stdout == "Stream ended without terminal event"
+
+
 def test_app_metadata_identifies_the_ecommerce_agent_platform():
     from app import app
 
