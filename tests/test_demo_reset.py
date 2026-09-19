@@ -1,5 +1,7 @@
-from db.models import ActionExecution, AfterSalesRequest
-from scripts.reset_demo import reset_demo_state
+from datetime import datetime, timedelta, timezone
+
+from db.models import ActionExecution, AfterSalesRequest, Order
+from scripts.reset_demo import load_configured_database_url, reset_demo_state
 from services.order_after_sales_service import OrderAfterSalesService
 
 
@@ -16,6 +18,13 @@ def test_reset_removes_only_demo_users_after_sales_records(tmp_path):
         "demo-hash",
     )
     with service.session_manager.session_scope() as session:
+        demo_order = (
+            session.query(Order)
+            .filter(Order.order_no == "JP20260919002")
+            .one()
+        )
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        demo_order.delivered_at = now - timedelta(days=30)
         session.add(
             AfterSalesRequest(
                 request_no="AS-FOREIGN",
@@ -43,12 +52,23 @@ def test_reset_removes_only_demo_users_after_sales_records(tmp_path):
 
     result = reset_demo_state(database_url)
 
-    assert result == {"after_sales_requests": 1, "action_executions": 1}
+    assert result == {
+        "after_sales_requests": 1,
+        "action_executions": 1,
+        "return_window_refreshed": 1,
+    }
     assert service.count_return_requests() == 1
     assert service.get_order("demo", "user-a", "JP20260919002") is not None
     with service.session_manager.session_scope() as session:
         remaining = session.query(AfterSalesRequest).one()
         assert (remaining.tenant_id, remaining.user_id) == ("other", "user-z")
+        refreshed = (
+            session.query(Order)
+            .filter(Order.order_no == "JP20260919002")
+            .one()
+        )
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        assert now - refreshed.delivered_at < timedelta(minutes=1)
 
 
 def test_reset_refuses_non_sqlite_databases():
@@ -58,3 +78,17 @@ def test_reset_refuses_non_sqlite_databases():
         assert str(exc) == "demo reset only supports SQLite"
     else:
         raise AssertionError("non-SQLite reset must be rejected")
+
+
+def test_cli_configuration_loads_the_requested_dotenv_file(tmp_path, monkeypatch):
+    database_file = tmp_path / "configured.db"
+    dotenv_file = tmp_path / ".env"
+    dotenv_file.write_text(
+        f"JAKEPILOT_DATABASE_URL=sqlite:///{database_file.as_posix()}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("JAKEPILOT_DATABASE_URL", raising=False)
+
+    assert load_configured_database_url(dotenv_file) == (
+        f"sqlite:///{database_file.as_posix()}"
+    )
