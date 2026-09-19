@@ -210,3 +210,52 @@ def test_classification_processor_routes_order_after_sales_category():
     tokens = asyncio.run(collect())
     assert any("订单售后 Agent" in token for token in tokens)
     assert state_manager.get_current_state() == StateEnum.CLASSIFY
+
+
+def test_confirmation_command_routes_deterministically_without_llm():
+    from agents.task_classification.agent_router import AgentRouter
+    from agents.task_classification.classification_processor import (
+        ClassificationProcessor,
+    )
+    from agents.task_classification.state_manager import StateManager
+    from agents.task_classification.unrelated_handler import UnrelatedHandler
+    from config.constants import SharedState
+
+    class WrongClassifier:
+        calls = 0
+
+        async def classify_task(self, task):
+            self.calls += 1
+            return "appointment"
+
+    class FakeOrderAgent:
+        has_pending_action = False
+        has_active_flow = False
+
+        async def run_stream(self, message):
+            yield "[REPLY][订单售后 Agent]当前没有待确认操作。"
+
+    classifier = WrongClassifier()
+    state_manager = StateManager(SharedState())
+    router = AgentRouter(
+        appointment_agent=None,
+        consultant_agent=None,
+        state_manager=state_manager,
+        order_after_sales_agent=FakeOrderAgent(),
+    )
+    processor = ClassificationProcessor(
+        classifier,
+        state_manager,
+        router,
+        UnrelatedHandler(state_manager),
+    )
+
+    async def collect():
+        return [
+            token
+            async for token in processor.process_task_stream("确认提交")
+        ]
+
+    tokens = asyncio.run(collect())
+    assert classifier.calls == 0
+    assert any("当前没有待确认操作" in token for token in tokens)

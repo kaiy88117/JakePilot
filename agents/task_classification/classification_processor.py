@@ -50,6 +50,13 @@ class ClassificationProcessor:
         try:
             # 检查是否需要进行分类
             if self.state_manager.should_classify():
+                if (
+                    task.strip() in {"确认", "确认提交"}
+                    and self.agent_router.order_after_sales_agent
+                ):
+                    async for token in self.agent_router.route_to_order_after_sales(task):
+                        yield token
+                    return
                 # 进行任务分类
                 category = await self.task_classifier.classify_task(task)
                 
@@ -93,6 +100,14 @@ class ClassificationProcessor:
         try:
             # 检查是否需要进行分类
             if self.state_manager.should_classify():
+                if (
+                    task.strip() in {"确认", "确认提交"}
+                    and self.agent_router.order_after_sales_agent
+                ):
+                    result = ""
+                    async for token in self.agent_router.route_to_order_after_sales(task):
+                        result += token
+                    return result
                 category = await self.task_classifier.classify_task(task)
                 
                 if category == "appointment" and self.agent_router.appointment_agent:

@@ -22,6 +22,7 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 - 面向预约槽位抽取与下一动作选择的本地小模型后训练。
 
 详细设计见 `docs/superpowers/specs/2026-09-17-ecommerce-agent-architecture-design.md`。
+本地启动、数据重置和面试演示顺序见 [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md)。
 
 ## 请求链路
 

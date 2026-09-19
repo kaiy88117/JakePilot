@@ -49,6 +49,9 @@ def test_rendered_homepage_exposes_ecommerce_agent_workspace():
     assert "订单与物流" in visible_text
     assert "退换货办理" in visible_text
     assert "上门安装与维修" in visible_text
+    assert "知识咨询、订单售后或上门服务预约 Agent" in visible_text
+    assert "订单写操作经过核验、确认和幂等保护" in visible_text
+    assert "订单、退款等写操作仍处于后续实现阶段" not in visible_text
     assert "按摩" not in visible_text
     assert "技师" not in visible_text
     assert {
