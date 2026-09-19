@@ -112,14 +112,9 @@ class AppointmentProcessor:
             appointment_history["preference"] = data["preference"]
         
         # 检查是否收集齐所有必需信息
-        # 必需信息：时间、项目、时长
-        # 如果指定了技师名，则不需要性别；否则性别也是必需的
+        # 上门服务 MVP 的必需信息：时间、服务类型、预计服务时长。
         required_fields = ["start_time", "project", "duration"]
         technician_name = appointment_history.get("technician_name")
-        
-        if not technician_name or technician_name == "未知":
-            # 没有指定技师，需要性别来筛选
-            required_fields.append("gender")
         
         has_all_required = all(
             appointment_history.get(field) and appointment_history[field] != "未知" 
@@ -212,7 +207,7 @@ class AppointmentProcessor:
         # 检查是否在等待用户确认推荐技师
         if appointment_history.get('awaiting_confirmation'):
             # 用户回应不明确，重新询问
-            yield f"[REPLY][预约机器人]\n机器人：请您明确回复\"是\"或\"不\"，我好为您安排预约。\n"
+            yield f"[REPLY][预约机器人]\n机器人：请明确回复\"是\"或\"不\"，我好为您安排工程师。\n"
             return
         
         # 收集思考过程
@@ -272,11 +267,11 @@ class AppointmentProcessor:
             self.appointment_database.update_memory_schedule(tech["id"], start_time, end_time)
             # 使用 LLM agent 生成结合北京天气的温馨提示
             if self.llm and hasattr(self, 'agent_executor'):
-                prompt = f"请获取北京今天的天气信息，然后结合天气情况为用户生成一段温馨的预约成功提示。技师姓名：{tech['name']}，性别：{tech['gender']}。请根据天气给出合适的建议和关怀。"
+                prompt = f"请获取北京今天的天气信息，并生成简短的上门服务提示。工程师姓名：{tech['name']}。不要承诺未确认的服务结果。"
                 try:
                     result = await self.agent_executor.ainvoke({"input": prompt})
                     agent_output = result.get("output", "")
-                    return f"\n机器人：已为您预约技师：{tech['name']}，性别：{tech['gender']}。预约成功！\n{agent_output}\n"
+                    return f"\n机器人：已为您预约工程师：{tech['name']}。预约成功！\n{agent_output}\n"
                 except Exception as e:
                     print(f"Agent调用失败: {e}")
                     return self.message_builder.create_appointment_success_message(tech)
@@ -298,11 +293,6 @@ class AppointmentProcessor:
             missing.append("project")
         if not appointment_history.get("duration") or appointment_history.get("duration") == "未知":
             missing.append("duration")
-        
-        # 如果没有指定技师名，则需要性别
-        if not technician_name or technician_name == "未知":
-            if not appointment_history.get("gender") or appointment_history.get("gender") == "未知":
-                missing.append("gender")
         
         reply = self.message_builder.create_missing_info_questions(missing)
         yield f"[THOUGHT][预约机器人]用户的预约信息不完整，缺少：{', '.join(missing)}，我需要询问用户补充这些信息"

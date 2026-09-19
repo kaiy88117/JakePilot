@@ -109,6 +109,6 @@ class TaskClassificationAgent:
         """重置对话状态"""
         self.classification_processor.reset_conversation()
     
-    def set_business_context(self, service_name: str = "推拿服务"):
+    def set_business_context(self, service_name: str = "电商售后"):
         """设置业务上下文"""
         self.unrelated_handler.set_business_context(service_name)

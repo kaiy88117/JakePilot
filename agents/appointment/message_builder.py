@@ -12,11 +12,10 @@ class MessageBuilder:
     
     def __init__(self):
         self.missing_info_prompts = {
-            "gender": "您希望选择男技师还是女技师呢？",
-            "start_time": "请问您想预约的时间是？",
-            "duration": "请问您需要多长时间的服务？",
-            "project": "请问您需要什么服务项目？比如按摩？",
-            "preference": "您对技师有力气大小等偏好吗？"
+            "start_time": "请问您希望工程师什么时间上门？",
+            "duration": "请问需要预留多长时间的服务窗口？",
+            "project": "请补充服务类型和商品，例如空调安装或洗衣机维修。",
+            "preference": "您对工程师技能或服务方式有特殊要求吗？"
         }
     
     def create_appointment_success_message(self, tech: Dict[str, Any]) -> str:
@@ -24,39 +23,36 @@ class MessageBuilder:
         # 检查是否是推荐技师
         if tech.get('is_recommendation'):
             original_tech = tech.get('original_technician', {})
-            return (f"\n机器人：已为您预约技师：{tech['name']}，性别：{tech['gender']}。预约成功！"
-                    f"（原指定的{original_tech.get('name', '')}技师时间冲突，{tech['name']}在相同服务方面同样专业）"
-                    "今天下午北京最高温度39℃，出行请注意防晒，期待与您相遇\n")
+            return (f"\n机器人：已为您预约工程师：{tech['name']}。预约成功！"
+                    f"（原指定的{original_tech.get('name', '')}工程师时间冲突，{tech['name']}具备相应服务能力）\n")
         else:
-            return (f"\n机器人：已为您预约技师：{tech['name']}，性别：{tech['gender']}。预约成功！"
-                    "今天下午北京最高温度39℃，出行请注意防晒，期待与您相遇\n")
+            return f"\n机器人：已为您预约工程师：{tech['name']}。预约成功！\n"
 
     def create_technician_recommendation_message(self, original_tech: Dict[str, Any], 
                                                recommended_tech: Dict[str, Any], 
                                                appointment_history: Dict[str, Any],
                                                llm=None) -> str:
         """创建技师推荐消息，使用LLM生成个性化措辞"""
-        project = appointment_history.get('project', '按摩服务')
+        project = appointment_history.get('project', '上门服务')
         start_time = appointment_history.get('start_time', '')
         
         if llm:
             try:
                 # 构建LLM提示
                 prompt = f"""
-作为一个专业的预约助手，用户想预约{original_tech['name']}技师做{project}，但{original_tech['name']}技师在{start_time}这个时间段不空闲。
+作为电商售后预约助手，用户想预约{original_tech['name']}工程师处理{project}，但该工程师在{start_time}不空闲。
 
-我找到了一位相似的技师：
+我找到了一位技能相近的工程师：
 - 姓名：{recommended_tech['name']}
-- 性别：{recommended_tech['gender']}  
-- 专长：{recommended_tech.get('strength', '')}
+- 技能：{recommended_tech.get('strength', '')}
 
-原技师专长：{original_tech.get('strength', '')}
+原工程师技能：{original_tech.get('strength', '')}
 
-请帮我生成一段温馨、专业的推荐话术，告诉用户原技师没空，但推荐技师在相同项目上同样专业，这个时间段有空，询问用户是否愿意预约推荐技师。
+请生成一段专业的推荐话术，说明原工程师没空，推荐工程师具备相应技能且该时段可用，并询问用户是否接受调整。
 
 要求：
 1. 语气温和、专业
-2. 突出推荐技师的专业性
+2. 突出推荐工程师的专业性
 3. 明确询问用户意愿
 4. 字数控制在80字以内
 """
@@ -71,16 +67,16 @@ class MessageBuilder:
                 print(f"LLM生成推荐消息失败: {e}")
         
         # 如果LLM失败，使用默认消息
-        return (f"\n机器人：抱歉，{original_tech['name']}技师在{start_time}这个时间段不空闲。"
-                f"不过{recommended_tech['name']}技师（{recommended_tech['gender']}）在{project}方面同样专业，"
-                f"这个时间段有空，请问您愿意让我帮您预约{recommended_tech['name']}技师吗？\n")
+        return (f"\n机器人：抱歉，{original_tech['name']}工程师在{start_time}不空闲。"
+                f"{recommended_tech['name']}工程师具备{project}相关技能且该时段可用，"
+                f"请问是否调整为{recommended_tech['name']}工程师？\n")
 
     def create_recommendation_declined_message(self, llm=None) -> str:
         """创建用户拒绝推荐时的消息"""
         if llm:
             try:
                 prompt = """
-用户拒绝了我推荐的技师，请帮我生成一段专业、温馨的回复，表达理解并提供其他选择建议。
+用户拒绝了推荐工程师，请生成一段专业回复，并提供更换时间或工程师的选择。
 
 要求：
 1. 表达理解用户的选择
@@ -97,7 +93,7 @@ class MessageBuilder:
                 print(f"LLM生成拒绝消息失败: {e}")
         
         # 默认消息
-        return "\n机器人：好的，我理解您的选择。您可以选择其他时间段，或者我可以为您重新推荐其他技师。请问您还有其他需要吗？\n"
+        return "\n机器人：好的，您可以选择其他时间段，或者由我重新匹配工程师。\n"
     
     def create_appointment_failure_message(self, technician_name: str) -> str:
         """创建预约失败消息"""
@@ -107,11 +103,11 @@ class MessageBuilder:
             appointment_service = AppointmentService()
             specific_tech = appointment_service.get_technician_by_name(technician_name)
             if specific_tech:
-                return f"\n机器人：抱歉，{technician_name}技师在您选择的时间段不空闲。请选择其他时间，或者我可以为您推荐其他技师。\n"
+                return f"\n机器人：抱歉，{technician_name}工程师在该时段不空闲。请选择其他时间，或者由我重新匹配工程师。\n"
             else:
-                return f"\n机器人：抱歉，没有找到名为'{technician_name}'的技师。请确认技师姓名，或者我可以为您推荐其他技师。\n"
+                return f"\n机器人：抱歉，没有找到名为'{technician_name}'的工程师。请确认姓名，或者由我自动匹配。\n"
         else:
-            return "\n机器人：抱歉，该时间段没有合适的技师空闲，请选择其他时间或调整偏好。\n"
+            return "\n机器人：抱歉，该时间段没有合适的工程师空闲，请选择其他时间。\n"
     
     def create_missing_info_questions(self, missing_info: List[str]) -> str:
         """根据缺失信息创建询问"""
@@ -120,7 +116,7 @@ class MessageBuilder:
     
     def create_unrelated_message(self) -> str:
         """创建无关请求的消息"""
-        return "[REPLY][预约机器人]抱歉，我无法处理这个问题。我只能帮您处理推拿服务相关的预约。请问您需要预约服务吗？\n"
+        return "[REPLY][预约机器人]我当前负责上门安装、检测和维修预约；其他售后问题会交回任务路由 Agent。\n"
     
     def create_parse_error_message(self) -> str:
         """创建解析错误消息"""

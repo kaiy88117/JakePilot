@@ -47,24 +47,24 @@ class TechnicianFinder:
         appointment_service = AppointmentService()
         
         if yield_func:
-            yield_func(f"[THOUGHT][预约机器人] 用户指定了技师：{technician_name}，正在查询该技师信息...\n")
+            yield_func(f"[THOUGHT][预约机器人] 用户指定了工程师：{technician_name}，正在查询人员信息...\n")
         
         specific_tech = appointment_service.get_technician_by_name(technician_name)
         if specific_tech:
             if yield_func:
-                yield_func(f"[THOUGHT][预约机器人] 找到技师：{specific_tech['name']}，正在检查档期...\n")
+                yield_func(f"[THOUGHT][预约机器人] 找到工程师：{specific_tech['name']}，正在检查档期...\n")
             
             if appointment_service.is_technician_available(specific_tech["id"], start_time, end_time):
                 if yield_func:
-                    yield_func(f"[THOUGHT][预约机器人] {technician_name}技师在指定时间有空\n")
+                    yield_func(f"[THOUGHT][预约机器人] {technician_name}工程师在指定时间有空\n")
                 return specific_tech
             else:
                 if yield_func:
-                    yield_func(f"[THOUGHT][预约机器人] {technician_name}技师在指定时间不空闲\n")
+                    yield_func(f"[THOUGHT][预约机器人] {technician_name}工程师在指定时间不空闲\n")
                 return None
         else:
             if yield_func:
-                yield_func(f"[THOUGHT][预约机器人] 未找到名为'{technician_name}'的技师\n")
+                yield_func(f"[THOUGHT][预约机器人] 未找到名为'{technician_name}'的工程师\n")
             return None
 
     def find_similar_available_technician(self, target_technician: Dict[str, Any], 
@@ -76,7 +76,7 @@ class TechnicianFinder:
         appointment_service = AppointmentService()
         
         if yield_func:
-            yield_func(f"[THOUGHT][预约机器人] 正在根据{target_technician['name']}的专长查找相似技师...\n")
+            yield_func(f"[THOUGHT][预约机器人] 正在根据{target_technician['name']}的技能查找替代工程师...\n")
         
         # 获取所有技师
         all_techs = appointment_service.get_all_technicians()
@@ -98,18 +98,18 @@ class TechnicianFinder:
         indices = find_best_match_indices(target_strength, strengths)
         
         if yield_func:
-            yield_func(f"[THOUGHT][预约机器人] 根据专长相似度排序，准备检查可用性...\n")
+            yield_func(f"[THOUGHT][预约机器人] 根据技能匹配度排序，准备检查可用性...\n")
         
         # 按相似度顺序检查技师可用性
         for index in indices:
             similar_tech = other_techs[index]
             if appointment_service.is_technician_available(similar_tech["id"], start_time, end_time):
                 if yield_func:
-                    yield_func(f"[THOUGHT][预约机器人] 找到相似且可用的技师：{similar_tech['name']}\n")
+                    yield_func(f"[THOUGHT][预约机器人] 找到技能匹配且可用的工程师：{similar_tech['name']}\n")
                 return similar_tech
         
         if yield_func:
-            yield_func(f"[THOUGHT][预约机器人] 没有找到相似且可用的技师\n")
+            yield_func(f"[THOUGHT][预约机器人] 没有找到技能匹配且可用的工程师\n")
         return None
     
     def filter_technicians_by_preference(self, all_techs: list, preference: str) -> list:
@@ -153,27 +153,27 @@ class TechnicianFinder:
         appointment_service = AppointmentService()
         
         if yield_func:
-            yield_func("[THOUGHT][预约机器人] 正在查找空闲技师...\n")
+            yield_func("[THOUGHT][预约机器人] 正在查找空闲工程师...\n")
         
         # 先在筛选后的技师中查找
         for tech in filtered_techs:
             if appointment_service.is_technician_available(tech["id"], start_time, end_time):
                 if yield_func:
-                    yield_func(f"[THOUGHT][预约机器人] 找到空闲技师：{tech['name']}\n")
+                    yield_func(f"[THOUGHT][预约机器人] 找到空闲工程师：{tech['name']}\n")
                 return tech
         
         # 如果有偏好但没找到，再在所有技师中查找
         if preference and preference != "无" and filtered_techs != all_techs:
             if yield_func:
-                yield_func("[THOUGHT][预约机器人] 偏好技师无空闲，尝试查找所有技师...\n")
+                yield_func("[THOUGHT][预约机器人] 偏好工程师无空闲，尝试查找其他工程师...\n")
             for tech in all_techs:
                 if appointment_service.is_technician_available(tech["id"], start_time, end_time):
                     if yield_func:
-                        yield_func(f"[THOUGHT][预约机器人] 找到空闲技师：{tech['name']}\n")
+                        yield_func(f"[THOUGHT][预约机器人] 找到空闲工程师：{tech['name']}\n")
                     return tech
         
         if yield_func:
-            yield_func("[THOUGHT][预约机器人] 没有找到空闲技师\n")
+            yield_func("[THOUGHT][预约机器人] 没有找到空闲工程师\n")
         return None
     
     def find_technician_with_thought(self, appointment_history: Dict[str, Any], 
@@ -225,12 +225,12 @@ class TechnicianFinder:
 
         # 通用查询逻辑
         if yield_func:
-            yield_func("[THOUGHT][预约机器人] 正在检索所有技师数据...\n")
+            yield_func("[THOUGHT][预约机器人] 正在检索工程师排班数据...\n")
         
         all_techs = appointment_service.get_all_technicians()
         if not all_techs:
             if yield_func:
-                yield_func("[THOUGHT][预约机器人] 没有找到任何技师数据\n")
+                yield_func("[THOUGHT][预约机器人] 没有找到任何工程师数据\n")
             return None
 
         # 先根据性别筛选技师

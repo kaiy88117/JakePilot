@@ -1,6 +1,7 @@
 from .base import SessionManager
 from .repositories import TechnicianRepository, KnowledgeRepository, UserBehaviorRepository
 from typing import Optional
+from config.database import db_config
 
 
 class DatabaseRouter:
@@ -13,14 +14,14 @@ class DatabaseRouter:
     3. 协调各个Repository的操作
     """
     
-    def __init__(self, db_path: str = 'sqlite:///data/smart_appointment.db'):
+    def __init__(self, db_path: Optional[str] = None):
         """
         初始化数据库路由器
         
         Args:
             db_path: 数据库连接路径
         """
-        self.session_manager = SessionManager(db_path)
+        self.session_manager = SessionManager(db_path or db_config.connection_string)
         
         # 初始化各个Repository
         self.technician_repo = TechnicianRepository(self.session_manager)

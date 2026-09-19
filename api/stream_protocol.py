@@ -19,7 +19,11 @@ def encode_sse(event: str, payload: dict) -> str:
 
 
 def _route_event(token: str, turn_id: str) -> str | None:
-    if "预约任务" in token and "预约机器人" in token:
+    if (
+        "预约任务" in token and "预约机器人" in token
+    ) or (
+        "上门服务预约" in token and "服务预约 Agent" in token
+    ):
         return encode_sse(
             "route_selected",
             {
@@ -28,7 +32,11 @@ def _route_event(token: str, turn_id: str) -> str | None:
                 "label": "上门服务预约 Agent",
             },
         )
-    if "咨询任务" in token and "咨询机器人" in token:
+    if (
+        "咨询任务" in token and "咨询机器人" in token
+    ) or (
+        "电商售后咨询" in token and "知识咨询 Agent" in token
+    ):
         return encode_sse(
             "route_selected",
             {

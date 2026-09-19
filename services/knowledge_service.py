@@ -73,6 +73,41 @@ class KnowledgeService:
                 "keywords": ["会员", "充值", "优惠", "折扣", "生日"]
             }
         ]
+        self.legacy_default_contents = {
+            item["content"] for item in self.default_knowledge
+        }
+        self.default_knowledge = [
+            {
+                "content": "演示商城销售的普通电子商品默认提供12个月有限保修；具体期限以商品详情页、订单和厂商保修卡为准。",
+                "category": "电商-保修政策",
+                "keywords": ["保修", "质保", "耳机", "电子商品", "12个月"],
+            },
+            {
+                "content": "符合条件的商品可在签收次日起七日内申请七日无理由退货；商品需保持完好，定制、激活或依法不适用的商品除外。",
+                "category": "电商-退换货政策",
+                "keywords": ["七日无理由", "退货", "签收", "商品完好"],
+            },
+            {
+                "content": "订单物流属于实时业务数据，需要提供订单号并通过订单工具核验；知识库不能替代实时物流查询。",
+                "category": "电商-订单物流",
+                "keywords": ["订单", "物流", "快递", "订单号", "实时查询"],
+            },
+            {
+                "content": "退款到账时间取决于售后审核结果和原支付渠道。退款申请成功不等于已经到账，应以订单售后记录为准。",
+                "category": "电商-退款政策",
+                "keywords": ["退款", "到账", "审核", "支付渠道"],
+            },
+            {
+                "content": "上门安装或维修预约需要确认商品与服务类型、期望上门时间和预计服务时长；系统匹配可用工程师后才能确认预约。",
+                "category": "电商-上门服务",
+                "keywords": ["上门", "安装", "维修", "预约", "工程师"],
+            },
+            {
+                "content": "涉及创建退货、换货、维修或退款工单的操作必须由用户确认；当前演示环境未接入真实订单系统时只能提供流程说明。",
+                "category": "电商-安全边界",
+                "keywords": ["售后单", "确认", "退货", "换货", "维修"],
+            },
+        ]
 
     async def initialize(self):
         """初始化知识库服务"""
@@ -80,11 +115,19 @@ class KnowledgeService:
             # 检查数据库中是否已有数据
             existing_docs = self.db.get_all_documents()
             
-            if not existing_docs:
-                logger.info("数据库为空，初始化默认知识库")
-                await self._create_default_knowledge()
-            else:
-                logger.info(f"从数据库加载了 {len(existing_docs)} 条知识")
+            legacy_docs = [
+                doc for doc in existing_docs
+                if doc.get("content") in self.legacy_default_contents
+            ]
+            for doc in legacy_docs:
+                self.db.delete_document(doc["id"], soft_delete=True)
+            if legacy_docs:
+                logger.info("已迁移 %s 条项目内置旧领域知识", len(legacy_docs))
+
+            active_docs = self.db.get_all_documents()
+            await self._create_default_knowledge(
+                existing_contents={doc.get("content") for doc in active_docs}
+            )
             
             # 构建向量索引
             await self._build_vector_index()
@@ -95,9 +138,12 @@ class KnowledgeService:
             logger.error(f"知识库服务初始化失败: {e}")
             raise
 
-    async def _create_default_knowledge(self):
+    async def _create_default_knowledge(self, existing_contents=None):
         """创建默认知识库"""
+        existing_contents = existing_contents or set()
         for knowledge in self.default_knowledge:
+            if knowledge["content"] in existing_contents:
+                continue
             try:
                 # 生成嵌入向量
                 text_for_embedding = f"{knowledge['content']} {' '.join(knowledge['keywords'])}"

@@ -47,6 +47,24 @@ def test_converts_route_and_reply_without_exposing_thought():
     assert "我发现这是" not in serialized
 
 
+def test_converts_ecommerce_route_wording_to_public_route_event():
+    events = _collect(
+        _tokens(
+            "[THOUGHT][归类机器人] 已识别为电商售后咨询，转交知识咨询 Agent 处理。",
+            "[REPLY][咨询机器人]保修期为12个月。",
+        ),
+        "turn-ecommerce",
+    )
+
+    assert [name for name, _ in events] == [
+        "turn_started",
+        "route_selected",
+        "answer_delta",
+        "turn_ended",
+    ]
+    assert events[1][1]["route"] == "knowledge_consultation"
+
+
 def test_internal_signal_is_not_sent_as_answer():
     events = _collect(
         _tokens(

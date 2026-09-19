@@ -57,7 +57,7 @@ class AgentRouter:
         self.state_manager.transition_to_appointment()
         
         # 生成思考提示
-        yield "[THOUGHT][归类机器人] 归类机器人：我发现这是一个预约任务，我将转给预约机器人处理。"
+        yield "[THOUGHT][归类机器人] 已识别为上门服务预约，转交服务预约 Agent 处理。"
         
         # 调用预约Agent
         try:
@@ -85,7 +85,7 @@ class AgentRouter:
         self.state_manager.transition_to_consultation()
         
         # 生成思考提示
-        yield "[THOUGHT][归类机器人] 归类机器人：我发现这是一个咨询任务，我将转给咨询机器人处理。"
+        yield "[THOUGHT][归类机器人] 已识别为电商售后咨询，转交知识咨询 Agent 处理。"
         
         # 调用咨询Agent
         try:
@@ -106,7 +106,10 @@ class AgentRouter:
         Yields:
             str: 回复内容
         """
-        reply = "暂不支持该类型任务。请只询问和按摩、预约相关的问题。"
+        reply = (
+            "暂不支持该类型任务。我可以处理商品与售后政策咨询，"
+            "以及上门安装或维修预约；具体订单、物流和退款进度需接入业务工具后核验。"
+        )
         yield "[REPLY][归类机器人]"
         for char in reply:
             yield char
@@ -137,7 +140,7 @@ class AgentRouter:
         """获取可用的服务列表"""
         services = []
         if self.appointment_agent:
-            services.append("预约服务")
+            services.append("上门安装或维修预约")
         if self.consultant_agent:
-            services.append("咨询服务")
+            services.append("商品与售后政策咨询")
         return services
