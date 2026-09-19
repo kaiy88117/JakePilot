@@ -67,3 +67,26 @@ def test_error_ends_turn_as_failed():
     assert [name for name, _ in events][-1] == "turn_failed"
     assert events[-1][1]["message"] == "预约服务暂时不可用"
     assert all(name != "turn_ended" for name, _ in events)
+
+
+def test_build_agent_event_stream_uses_supplied_processor():
+    from web.routes import build_agent_event_stream
+
+    async def fake_processor(message: str):
+        assert message == "查询耳机保修政策"
+        yield "[REPLY][咨询机器人]保修期为一年"
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "查询耳机保修政策",
+                turn_id="turn-test",
+                processor=fake_processor,
+            )
+        ]
+
+    frames = asyncio.run(collect())
+    assert frames[0] == ("turn_started", {"turn_id": "turn-test"})
+    assert frames[1][1]["delta"] == "保修期为一年"
+    assert frames[-1][0] == "turn_ended"

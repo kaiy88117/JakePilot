@@ -3,11 +3,15 @@ Web界面路由
 
 处理前端页面渲染和聊天功能
 """
+import uuid
+from collections.abc import AsyncIterator, Callable
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
-from api.chat_handler import ProcessUserInput_stream
+from pydantic import BaseModel, field_validator
+
+from api.stream_protocol import iter_sse_events
 import logging
 
 # 创建logger实例
@@ -22,6 +26,29 @@ class ChatRequest(BaseModel):
     message: str
     state: str | None = None
 
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        message = value.strip()
+        if not message:
+            raise ValueError("message must not be blank")
+        return message
+
+
+async def build_agent_event_stream(
+    message: str,
+    turn_id: str,
+    processor: Callable | None = None,
+) -> AsyncIterator[str]:
+    """Build the public event stream without initializing models on import."""
+    if processor is None:
+        from api.chat_handler import ProcessUserInput_stream
+
+        processor = ProcessUserInput_stream
+
+    async for frame in iter_sse_events(processor(message), turn_id):
+        yield frame
+
 @router.get("/", response_class=HTMLResponse, summary="主页")
 async def read_root(request: Request):
     """渲染主页聊天界面"""
@@ -30,14 +57,32 @@ async def read_root(request: Request):
 @router.post("/chat/stream", summary="流式聊天")
 async def chat_stream_endpoint(chat: ChatRequest):
     """处理流式聊天请求"""
+    from api.chat_handler import ProcessUserInput_stream
+
     async def token_generator():
         async for token in ProcessUserInput_stream(chat.message):
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 
+
+@router.post("/api/chat/stream", summary="Agent SSE 流式聊天")
+async def agent_chat_stream_endpoint(chat: ChatRequest):
+    """以结构化 SSE 事件返回 Agent 的公开执行状态和回答。"""
+    turn_id = f"turn_{uuid.uuid4().hex}"
+    return StreamingResponse(
+        build_agent_event_stream(chat.message, turn_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 @router.post("/chat", summary="兼容性聊天接口")
 async def chat_endpoint(chat: ChatRequest):
     """兼容性聊天接口，建议使用/chat/stream"""
+    from api.chat_handler import ProcessUserInput_stream
+
     async def token_generator():
         async for token in ProcessUserInput_stream(chat.message):
             yield token
