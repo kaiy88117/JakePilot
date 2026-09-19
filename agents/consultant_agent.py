@@ -1,5 +1,6 @@
 import uuid
 from config.model_provider import create_chat_model
+from services.hermesrag_client import HermesRagClient
 from .consultant import (
     KnowledgeRetriever,
     ConsultationClassifier,
@@ -34,7 +35,8 @@ class ConsultantAgent:
         self.consultation_processor = ConsultationProcessor(
             self.knowledge_retriever,
             self.consultation_classifier,
-            self.response_generator
+            self.response_generator,
+            knowledge_client=HermesRagClient.from_env(),
         )
 
     def _initialize_llm(self):
@@ -65,7 +67,9 @@ class ConsultantAgent:
         
         用于非流式的简单咨询场景
         """
-        return await self.consultation_processor.process_consultation(user_input)
+        return await self.consultation_processor.process_consultation(
+            user_input, self.session_id
+        )
 
     async def consult_stream(self, user_input: str):
         """

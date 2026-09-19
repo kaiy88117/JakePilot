@@ -4,11 +4,17 @@
 负责协调整个咨询流程
 """
 
+import json
 import logging
 from typing import AsyncGenerator, Dict, Any
 from .knowledge_retriever import KnowledgeRetriever
 from .consultation_classifier import ConsultationClassifier
 from .response_generator import ResponseGenerator
+from services.hermesrag_client import (
+    HermesRagClient,
+    HermesRagError,
+    KnowledgeResult,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -17,15 +23,28 @@ logger = logging.getLogger(__name__)
 class ConsultationProcessor:
     """咨询流程处理器"""
     
-    def __init__(self, knowledge_retriever: KnowledgeRetriever, 
+    def __init__(self, knowledge_retriever: KnowledgeRetriever,
                  consultation_classifier: ConsultationClassifier,
-                 response_generator: ResponseGenerator):
+                 response_generator: ResponseGenerator,
+                 knowledge_client: HermesRagClient | None = None):
         self.knowledge_retriever = knowledge_retriever
         self.consultation_classifier = consultation_classifier
         self.response_generator = response_generator
+        self.knowledge_client = knowledge_client
     
-    async def process_consultation(self, user_input: str) -> str:
+    async def process_consultation(
+        self, user_input: str, session_id: str = "default_session"
+    ) -> str:
         """处理标准咨询"""
+        if self.knowledge_client is not None:
+            try:
+                result = await self.knowledge_client.query(
+                    user_input, session_id, mode="auto"
+                )
+                return self._render_knowledge_result(result)
+            except HermesRagError:
+                logger.warning("HermesRAG unavailable; using local knowledge fallback")
+
         # 1. 检索知识
         knowledge_docs = await self.knowledge_retriever.search_knowledge(user_input, top_k=3)
         
@@ -37,6 +56,24 @@ class ConsultationProcessor:
     async def process_consultation_stream(self, user_input: str, session_id: str) -> AsyncGenerator[str, None]:
         """处理流式咨询"""
         try:
+            if self.knowledge_client is not None:
+                try:
+                    result = await self.knowledge_client.query(
+                        user_input, session_id, mode="auto"
+                    )
+                    yield self._knowledge_event(result)
+                    yield "[REPLY][咨询机器人]"
+                    yield self._render_knowledge_result(result)
+                    await self._record_consultation_behavior(
+                        user_input, [], session_id
+                    )
+                    return
+                except HermesRagError:
+                    logger.warning(
+                        "HermesRAG unavailable; using local knowledge fallback"
+                    )
+                    yield self._fallback_event()
+
             # 1. 检索知识
             knowledge_docs = await self.knowledge_retriever.search_knowledge(user_input, top_k=3)
             
@@ -50,6 +87,53 @@ class ConsultationProcessor:
         except Exception:
             logger.exception("咨询流程执行失败")
             yield "[ERROR]咨询服务暂时不可用，请稍后重试"
+
+    @staticmethod
+    def _render_knowledge_result(result: KnowledgeResult) -> str:
+        labels = list(
+            dict.fromkeys(
+                citation.source_label for citation in result.citations
+            )
+        )
+        if not labels:
+            return result.answer
+        return f"{result.answer}\n\n来源：{'、'.join(labels)}"
+
+    @staticmethod
+    def _knowledge_event(result: KnowledgeResult) -> str:
+        return "[EVENT]" + json.dumps(
+            {
+                "type": "knowledge_retrieval",
+                "data": {
+                    "mode": result.mode,
+                    "pipeline_status": result.pipeline_status,
+                    "evidence_sufficiency": result.evidence_sufficiency,
+                    "citation_count": result.citation_count,
+                    "terminal_reason": result.terminal_reason,
+                    "fallback": False,
+                },
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _fallback_event() -> str:
+        return "[EVENT]" + json.dumps(
+            {
+                "type": "knowledge_retrieval",
+                "data": {
+                    "mode": "local",
+                    "pipeline_status": "degraded",
+                    "evidence_sufficiency": "not_evaluated",
+                    "citation_count": 0,
+                    "terminal_reason": "hermesrag_unavailable",
+                    "fallback": True,
+                },
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
     
     async def handle_unrelated_request(self, user_input: str, unrelated_callback, shared_state) -> AsyncGenerator[str, None]:
         """处理与咨询无关的请求"""
