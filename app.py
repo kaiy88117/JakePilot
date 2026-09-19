@@ -70,7 +70,7 @@ def create_app() -> FastAPI:
     
     app = FastAPI(
         title="JakePilot",
-        description="多 Agent 服务咨询与预约编排平台",
+        description="面向电商售后的中心路由式多 Agent 服务平台",
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc"

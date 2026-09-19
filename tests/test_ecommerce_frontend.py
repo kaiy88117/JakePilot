@@ -88,3 +88,10 @@ process.stdout.write(JSON.stringify({{ first, second }}));
         }
     ]
     assert parsed["second"]["rest"] == ""
+
+
+def test_app_metadata_identifies_the_ecommerce_agent_platform():
+    from app import app
+
+    assert app.title == "JakePilot"
+    assert app.description == "面向电商售后的中心路由式多 Agent 服务平台"
