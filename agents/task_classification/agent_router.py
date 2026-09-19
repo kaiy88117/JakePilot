@@ -15,7 +15,13 @@ from .state_manager import StateManager
 class AgentRouter:
     """智能体路由器 - 根据任务类型路由到对应的处理Agent"""
     
-    def __init__(self, appointment_agent: Any, consultant_agent: Any, state_manager: StateManager):
+    def __init__(
+        self,
+        appointment_agent: Any,
+        consultant_agent: Any,
+        state_manager: StateManager,
+        order_after_sales_agent: Any = None,
+    ):
         """
         初始化路由器
         
@@ -26,6 +32,7 @@ class AgentRouter:
         """
         self.appointment_agent = appointment_agent
         self.consultant_agent = consultant_agent
+        self.order_after_sales_agent = order_after_sales_agent
         self.state_manager = state_manager
         
         # 设置Agent的共享状态
@@ -95,6 +102,26 @@ class AgentRouter:
         except Exception as e:
             yield f"[ERROR]咨询处理失败: {str(e)}"
             self.state_manager.reset_to_classify()
+
+    async def route_to_order_after_sales(
+        self, task: str
+    ) -> AsyncGenerator[str, None]:
+        if not self.order_after_sales_agent:
+            yield "[ERROR]订单售后服务暂时不可用"
+            return
+
+        self.state_manager.transition_to_order_after_sales()
+        yield "[THOUGHT][归类机器人] 已识别为订单售后任务，转交订单售后 Agent 处理。"
+        try:
+            async for token in self.order_after_sales_agent.run_stream(task):
+                yield token
+        except Exception:
+            yield "[ERROR]订单售后处理失败，请稍后重试"
+            self.state_manager.reset_to_classify()
+            return
+
+        if not self.order_after_sales_agent.has_pending_action:
+            self.state_manager.reset_to_classify()
     
     async def handle_unsupported_task(self, category: str) -> AsyncGenerator[str, None]:
         """
@@ -131,6 +158,11 @@ class AgentRouter:
             async with self.consultant_agent as agent:
                 async for token in agent.consult_stream(task):
                     yield token
+        elif self.state_manager.is_in_order_after_sales_flow():
+            async for token in self.order_after_sales_agent.run_stream(task):
+                yield token
+            if not self.order_after_sales_agent.has_pending_action:
+                self.state_manager.reset_to_classify()
         else:
             # 状态异常，重置并提示
             self.state_manager.reset_to_classify()
@@ -143,4 +175,6 @@ class AgentRouter:
             services.append("上门安装或维修预约")
         if self.consultant_agent:
             services.append("商品与售后政策咨询")
+        if self.order_after_sales_agent:
+            services.append("订单、物流与退货办理")
         return services

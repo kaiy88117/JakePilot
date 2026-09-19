@@ -5,6 +5,7 @@ class StateEnum(Enum):
     CLASSIFY = "classify"
     APPOINTMENT = "appointment"
     CONSULT = "consult"
+    ORDER_AFTER_SALES = "order_after_sales"
     OTHER = "other"
     
 class SharedState:

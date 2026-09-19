@@ -22,10 +22,16 @@ class TaskClassificationAgent:
     3. 管理与其他Agent的协调
     """
     
-    def __init__(self, appointment_agent, consultant_agent):
+    def __init__(
+        self,
+        appointment_agent,
+        consultant_agent,
+        order_after_sales_agent=None,
+    ):
         # 基础设置
         self.appointment_agent = appointment_agent
         self.consultant_agent = consultant_agent
+        self.order_after_sales_agent = order_after_sales_agent
         
         # 初始化LLM
         self.llm = self._initialize_llm()
@@ -36,7 +42,8 @@ class TaskClassificationAgent:
         self.agent_router = AgentRouter(
             appointment_agent, 
             consultant_agent, 
-            self.state_manager
+            self.state_manager,
+            order_after_sales_agent,
         )
         self.unrelated_handler = UnrelatedHandler(self.state_manager)
         self.classification_processor = ClassificationProcessor(

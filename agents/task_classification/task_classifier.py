@@ -31,19 +31,21 @@ class TaskClassifier:
             input_variables=["task"],
             template=(
                 "你是电商售后 Agent 的任务路由器，需要判断当前用户请求应交给哪个领域 Agent。\n"
-                "商品说明、保修政策、退换货规则、订单物流查询和退款咨询归类为 query。\n"
+                "商品说明、保修政策和通用退换货规则归类为 knowledge。\n"
+                "包含具体订单号的订单状态、订单物流进度、退货资格或退货申请归类为 order_after_sales。\n"
                 "明确要求预约上门安装、检测或维修，或者正在补充上门服务信息，归类为 appointment。\n"
                 "支付结果通知归类为 pay，内部服务完成通知归类为 statistics。\n"
                 "闲聊以及与商品、订单、售后和上门服务无关的问题归类为 other。\n"
                 "请将以下任务归类为以下类别，输出只能选择以下之一：\n"
                 "1. appointment（预约任务）\n"
-                "2. query（查询任务）\n"
-                "3. pay（支付任务）\n"
-                "4. statistics（统计任务）\n"
-                "5. other（其它任务）\n"
+                "2. knowledge（知识与政策咨询）\n"
+                "3. order_after_sales（订单、物流与退货办理）\n"
+                "4. pay（支付任务）\n"
+                "5. statistics（统计任务）\n"
+                "6. other（其它任务）\n"
                 "只返回类别英文名。\n\n"
-                "示例：'耳机保修期多久'输出query。\n"
-                "示例：'帮我查询订单JP20260919001的物流'输出query。\n"
+                "示例：'耳机保修期多久'输出knowledge。\n"
+                "示例：'帮我查询订单JP20260919001的物流'输出order_after_sales。\n"
                 "示例：'预约周六上午上门安装空调'输出appointment。\n"
                 "示例：'给我讲一个笑话'输出other。\n"
                 "以下是本次归类任务:\n"
@@ -66,7 +68,15 @@ class TaskClassifier:
             category = category_msg.content.strip().lower()
             
             # 验证分类结果是否有效
-            valid_categories = {'appointment', 'query', 'pay', 'statistics', 'other'}
+            valid_categories = {
+                'appointment',
+                'knowledge',
+                'order_after_sales',
+                'query',
+                'pay',
+                'statistics',
+                'other',
+            }
             if category not in valid_categories:
                 return 'other'  # 默认归类为其他
                 
@@ -81,6 +91,8 @@ class TaskClassifier:
         descriptions = {
             'appointment': '上门服务预约 - 安装、检测或维修预约',
             'query': '电商售后查询 - 商品、政策、订单、物流或退款咨询',
+            'knowledge': '知识咨询 - 商品说明、保修与通用售后政策',
+            'order_after_sales': '订单售后 - 订单、物流、退货资格与退货申请',
             'pay': '支付任务 - 支付结果相关事务',
             'statistics': '服务统计 - 工程师上报服务完成状态',
             'other': '其他任务 - 与电商售后无关的请求'

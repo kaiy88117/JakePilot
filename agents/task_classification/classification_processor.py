@@ -57,8 +57,14 @@ class ClassificationProcessor:
                 if category == "appointment" and self.agent_router.appointment_agent:
                     async for token in self.agent_router.route_to_appointment(task):
                         yield token
-                elif category == "query" and self.agent_router.consultant_agent:
+                elif category in {"query", "knowledge"} and self.agent_router.consultant_agent:
                     async for token in self.agent_router.route_to_consultation(task):
+                        yield token
+                elif (
+                    category == "order_after_sales"
+                    and self.agent_router.order_after_sales_agent
+                ):
+                    async for token in self.agent_router.route_to_order_after_sales(task):
                         yield token
                 else:
                     # 不支持的任务类型
@@ -92,10 +98,18 @@ class ClassificationProcessor:
                 if category == "appointment" and self.agent_router.appointment_agent:
                     self.state_manager.transition_to_appointment()
                     return await self.agent_router.appointment_agent.run(user_input=task)
-                elif category == "query" and self.agent_router.consultant_agent:
+                elif category in {"query", "knowledge"} and self.agent_router.consultant_agent:
                     self.state_manager.transition_to_consultation()
                     async with self.agent_router.consultant_agent as agent:
                         return await agent.consult(task)
+                elif (
+                    category == "order_after_sales"
+                    and self.agent_router.order_after_sales_agent
+                ):
+                    result = ""
+                    async for token in self.agent_router.route_to_order_after_sales(task):
+                        result += token
+                    return result
                 else:
                     return (
                         "暂不支持该类型任务。我可以处理商品与售后政策咨询，"
@@ -108,6 +122,11 @@ class ClassificationProcessor:
                 elif self.state_manager.is_in_consultation_flow():
                     async with self.agent_router.consultant_agent as agent:
                         return await agent.consult(task)
+                elif self.state_manager.is_in_order_after_sales_flow():
+                    result = ""
+                    async for token in self.agent_router.route_to_order_after_sales(task):
+                        result += token
+                    return result
                 
         except Exception as e:
             self.state_manager.force_reset()

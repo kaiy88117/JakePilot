@@ -8,9 +8,22 @@ from typing import Any
 from agents.appointment_agent import AppointmentAgent
 from agents.consultant_agent import ConsultantAgent
 from agents.task_classification_agent import TaskClassificationAgent
+from agents.order_after_sales_agent import OrderAfterSalesAgent
+from config.database import db_config
+from services.order_after_sales_service import OrderAfterSalesService
 
 
 LEGACY_SESSION_ID = "legacy-default"
+_order_after_sales_service: OrderAfterSalesService | None = None
+
+
+def _get_order_after_sales_service() -> OrderAfterSalesService:
+    global _order_after_sales_service
+    if _order_after_sales_service is None:
+        service = OrderAfterSalesService(db_config.connection_string)
+        service.seed_demo_data()
+        _order_after_sales_service = service
+    return _order_after_sales_service
 
 
 class SessionRegistryFull(RuntimeError):
@@ -29,6 +42,10 @@ def _create_task_agent(session_id: str) -> TaskClassificationAgent:
     return TaskClassificationAgent(
         AppointmentAgent(session_id=session_id),
         ConsultantAgent(session_id=session_id),
+        OrderAfterSalesAgent(
+            session_id=session_id,
+            service=_get_order_after_sales_service(),
+        ),
     )
 
 
