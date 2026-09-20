@@ -20,3 +20,6 @@ __all__ = [
     'OrderRepository',
     'MemoryRepository',
 ]
+from db.repositories.turn_checkpoint_repository import TurnCheckpointRepository
+
+__all__ = ["TurnCheckpointRepository"]

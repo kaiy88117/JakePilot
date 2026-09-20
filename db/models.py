@@ -193,3 +193,20 @@ class UserProfileMemory(Base):
     valid_from = Column(DateTime, nullable=False)
     valid_until = Column(DateTime, nullable=True)
     superseded_by = Column(String, nullable=True)
+
+
+class TurnCheckpoint(Base):
+    __tablename__ = "turn_checkpoints"
+
+    id = Column(Integer, primary_key=True)
+    turn_id = Column(String, nullable=False, unique=True, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    session_id = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, default="started")
+    last_event_type = Column(String, nullable=False, default="turn_started")
+    delivery_status = Column(String, nullable=False, default="pending")
+    business_write_succeeded = Column(Integer, nullable=False, default=0)
+    event_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)

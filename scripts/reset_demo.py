@@ -16,6 +16,7 @@ from db.models import (
     AfterSalesRequest,
     MemoryEvent,
     Order,
+    TurnCheckpoint,
     UserProfileMemory,
     WorkingState,
 )
@@ -81,6 +82,14 @@ def reset_demo_state(database_url: str) -> dict[str, int]:
                 )
                 .delete(synchronize_session=False)
             )
+            checkpoint_count = (
+                session.query(TurnCheckpoint)
+                .filter(
+                    TurnCheckpoint.tenant_id == DEMO_TENANT_ID,
+                    TurnCheckpoint.user_id == DEMO_USER_ID,
+                )
+                .delete(synchronize_session=False)
+            )
             return_window_refreshed = (
                 session.query(Order)
                 .filter(
@@ -103,6 +112,7 @@ def reset_demo_state(database_url: str) -> dict[str, int]:
             "working_states": working_count,
             "memory_events": event_count,
             "profile_memories": profile_count,
+            "turn_checkpoints": checkpoint_count,
             "return_window_refreshed": return_window_refreshed,
         }
     finally:
@@ -134,6 +144,7 @@ def main() -> int:
         f"工作记忆 {result['working_states']} 条，"
         f"事件记忆 {result['memory_events']} 条，"
         f"用户偏好 {result['profile_memories']} 条，"
+        f"Turn 检查点 {result['turn_checkpoints']} 条，"
         f"退货时效刷新 {result['return_window_refreshed']} 条。"
     )
     print("除指定演示订单的签收时间外，订单、物流、知识库、预约及其他租户/用户数据未修改。")

@@ -12,6 +12,7 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 - Working、Episodic、Profile 三层业务记忆，以及按租户/用户/会话隔离、30 分钟过期的任务恢复。
 - 统一 Context Engine 按领域、来源和 Token 预算装配上下文；最多注入 3 条历史事件与 3 条偏好，不用记忆替代订单实时数据。
 - 退货草稿和待确认动作可跨 Agent 实例恢复；确认时再次调用 `return.check` 回源，通过后才允许 `return.create` 写入。
+- Working Memory、Action Ledger 与 Turn Journal 分离：分别记录任务状态、幂等业务写入和 SSE 投递结果，可识别“业务已成功但回答断线”并安全重试。
 - 上门安装或维修的多轮信息补全、工程师匹配、时间检查与 SQLite 写入。
 - `/api/chat/stream` 结构化 SSE 协议，过滤内部思维标记，只公开路由、工具状态、确认请求、回答和终止事件。
 - 电商售后工作台首页，支持快捷问题、流式回答、运行时间线和移动端布局。
@@ -57,6 +58,8 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8001
 
 - 工作台：`http://127.0.0.1:8001/`
 - API 文档：`http://127.0.0.1:8001/docs`
+
+每次 `/api/chat/stream` 会在首个 `turn_started` 事件返回 `turn_id`。演示环境可通过 `GET /api/turns/{turn_id}?session_id={session_id}` 查询脱敏生命周期、最后事件、投递状态及是否已有成功写入；会话不匹配时返回 404。
 
 旧 Agent 运行仍需要在 `.env` 中配置可用的 LLM 和 Embedding Provider。不要提交真实密钥。
 

@@ -3,16 +3,20 @@ Web界面路由
 
 处理前端页面渲染和聊天功能
 """
+import asyncio
+import json
 import uuid
 import re
 from collections.abc import AsyncIterator, Callable
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
 
 from api.stream_protocol import iter_sse_events
+from config.database import db_config
+from services.turn_journal import TurnJournal
 import logging
 
 # 创建logger实例
@@ -22,6 +26,31 @@ templates = Jinja2Templates(directory="web/templates")
 
 # Web路由器
 router = APIRouter(tags=["Web界面"])
+_turn_journal: TurnJournal | None = None
+
+
+def _get_turn_journal() -> TurnJournal:
+    global _turn_journal
+    if _turn_journal is None:
+        _turn_journal = TurnJournal(db_config.connection_string)
+    return _turn_journal
+
+
+def _decode_public_frame(frame: str) -> tuple[str, dict] | None:
+    event_type = None
+    data_lines = []
+    for line in frame.strip().splitlines():
+        if line.startswith("event: "):
+            event_type = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            data_lines.append(line.removeprefix("data: "))
+    if not event_type or not data_lines:
+        return None
+    try:
+        payload = json.loads("\n".join(data_lines))
+    except json.JSONDecodeError:
+        return None
+    return (event_type, payload) if isinstance(payload, dict) else None
 
 class ChatRequest(BaseModel):
     message: str
@@ -54,8 +83,22 @@ async def build_agent_event_stream(
     turn_id: str,
     processor: Callable | None = None,
     session_id: str | None = None,
+    turn_journal: TurnJournal | None = None,
 ) -> AsyncIterator[str]:
     """Build the public event stream without initializing models on import."""
+    journal = turn_journal
+    journal_session_id = session_id or "legacy-default"
+    if journal is not None:
+        try:
+            journal.begin(
+                turn_id=turn_id,
+                tenant_id="demo",
+                user_id="user-a",
+                session_id=journal_session_id,
+            )
+        except Exception:
+            logger.exception("Turn checkpoint initialization failed")
+            journal = None
     try:
         if processor is None:
             from api.chat_handler import ProcessUserInput_stream
@@ -70,8 +113,26 @@ async def build_agent_event_stream(
 
         tokens = failed_tokens()
 
-    async for frame in iter_sse_events(tokens, turn_id):
-        yield frame
+    try:
+        async for frame in iter_sse_events(tokens, turn_id):
+            if journal is not None:
+                decoded = _decode_public_frame(frame)
+                if decoded is not None:
+                    try:
+                        journal.observe(turn_id, decoded[0], decoded[1])
+                    except Exception:
+                        logger.exception("Turn checkpoint update failed")
+                        journal = None
+            yield frame
+        if journal is not None:
+            journal.mark_delivered(turn_id)
+    except (asyncio.CancelledError, GeneratorExit):
+        if journal is not None:
+            try:
+                journal.mark_disconnected(turn_id)
+            except Exception:
+                logger.exception("Turn disconnect checkpoint failed")
+        raise
 
 @router.get("/", response_class=HTMLResponse, summary="主页")
 async def read_root(request: Request):
@@ -100,6 +161,7 @@ async def agent_chat_stream_endpoint(chat: ChatRequest):
             chat.message,
             turn_id,
             session_id=chat.session_id,
+            turn_journal=_get_turn_journal(),
         ),
         media_type="text/event-stream",
         headers={
@@ -107,6 +169,15 @@ async def agent_chat_stream_endpoint(chat: ChatRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/api/turns/{turn_id}", summary="查询 Turn 投递状态")
+async def turn_checkpoint_endpoint(turn_id: str, session_id: str):
+    """Return only the safe lifecycle projection for the matching session."""
+    checkpoint = _get_turn_journal().get(turn_id, session_id)
+    if checkpoint is None:
+        raise HTTPException(status_code=404, detail="turn checkpoint not found")
+    return checkpoint
 
 @router.post("/chat", summary="兼容性聊天接口")
 async def chat_endpoint(chat: ChatRequest):

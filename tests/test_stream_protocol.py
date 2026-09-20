@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from api.stream_protocol import iter_sse_events
 
 
@@ -212,6 +214,98 @@ def test_build_agent_event_stream_converts_processor_startup_failure():
     assert [name for name, _ in frames] == ["turn_started", "turn_failed"]
     assert frames[-1][1]["message"] == "服务处理失败，请稍后重试"
     assert "SYNTHETIC_PRIVATE_DIAGNOSTIC" not in json.dumps(frames)
+
+
+def test_build_agent_event_stream_persists_delivered_checkpoint(tmp_path):
+    from services.turn_journal import TurnJournal
+    from web.routes import build_agent_event_stream
+
+    journal = TurnJournal(
+        f"sqlite:///{(tmp_path / 'delivered-turn.db').as_posix()}"
+    )
+
+    async def fake_processor(message: str):
+        yield "[REPLY][咨询机器人]已完成"
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "测试",
+                turn_id="turn-delivered",
+                session_id="session-a",
+                processor=fake_processor,
+                turn_journal=journal,
+            )
+        ]
+
+    frames = asyncio.run(collect())
+    checkpoint = journal.get("turn-delivered", "session-a")
+
+    assert frames[-1][0] == "turn_ended"
+    assert checkpoint["status"] == "completed"
+    assert checkpoint["delivery_status"] == "delivered"
+    assert checkpoint["last_event_type"] == "turn_ended"
+
+
+def test_build_agent_event_stream_marks_cancelled_after_successful_write(
+    tmp_path,
+):
+    from services.turn_journal import TurnJournal
+    from web.routes import build_agent_event_stream
+
+    journal = TurnJournal(
+        f"sqlite:///{(tmp_path / 'cancelled-turn.db').as_posix()}"
+    )
+
+    async def cancelled_processor(message: str):
+        yield '[EVENT]{"type":"tool_finished","data":{"tool":"return.create","status":"succeeded","step":2}}'
+        raise asyncio.CancelledError()
+
+    async def consume():
+        frames = []
+        async for frame in build_agent_event_stream(
+            "确认提交",
+            turn_id="turn-cancelled",
+            session_id="session-a",
+            processor=cancelled_processor,
+            turn_journal=journal,
+        ):
+            frames.append(_decode(frame))
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(consume())
+
+    checkpoint = journal.get("turn-cancelled", "session-a")
+    assert checkpoint["status"] == "cancelled"
+    assert checkpoint["delivery_status"] == "disconnected"
+    assert checkpoint["business_write_succeeded"] is True
+
+
+def test_turn_checkpoint_endpoint_requires_matching_session(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+    from services.turn_journal import TurnJournal
+    import web.routes as routes
+
+    journal = TurnJournal(
+        f"sqlite:///{(tmp_path / 'checkpoint-api.db').as_posix()}"
+    )
+    journal.begin(
+        turn_id="turn-api",
+        tenant_id="demo",
+        user_id="user-a",
+        session_id="session-a",
+    )
+    monkeypatch.setattr(routes, "_turn_journal", journal)
+
+    checkpoint = asyncio.run(
+        routes.turn_checkpoint_endpoint("turn-api", "session-a")
+    )
+    assert checkpoint["turn_id"] == "turn-api"
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(routes.turn_checkpoint_endpoint("turn-api", "session-b"))
+    assert exc_info.value.status_code == 404
 
 
 def test_runtime_tool_events_are_allowlisted_and_arguments_are_hidden():

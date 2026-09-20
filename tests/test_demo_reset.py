@@ -4,6 +4,7 @@ from db.models import ActionExecution, AfterSalesRequest, Order
 from scripts.reset_demo import load_configured_database_url, reset_demo_state
 from services.order_after_sales_service import OrderAfterSalesService
 from services.memory_manager import MemoryManager
+from services.turn_journal import TurnJournal
 
 
 def test_reset_removes_only_demo_users_after_sales_records(tmp_path):
@@ -44,6 +45,13 @@ def test_reset_removes_only_demo_users_after_sales_records(tmp_path):
         source_type="explicit",
         confidence=1.0,
         source_trace_id="trace-profile",
+    )
+    journal = TurnJournal(database_url)
+    journal.begin(
+        turn_id="turn-demo",
+        tenant_id="demo",
+        user_id="user-a",
+        session_id="demo-session",
     )
     with service.session_manager.session_scope() as session:
         demo_order = (
@@ -86,11 +94,13 @@ def test_reset_removes_only_demo_users_after_sales_records(tmp_path):
         "working_states": 1,
         "memory_events": 1,
         "profile_memories": 1,
+        "turn_checkpoints": 1,
         "return_window_refreshed": 1,
     }
     assert memory.get_working("demo", "user-a", "demo-session") is None
     assert memory.recall_events("demo", "user-a") == []
     assert memory.recall_profiles("demo", "user-a") == []
+    assert journal.get("turn-demo", "demo-session") is None
     assert service.count_return_requests() == 1
     assert service.get_order("demo", "user-a", "JP20260919002") is not None
     with service.session_manager.session_scope() as session:
