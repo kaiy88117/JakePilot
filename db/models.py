@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, UniqueConstraint, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -139,3 +139,57 @@ class ActionExecution(Base):
     confirmed_by = Column(String, nullable=True)
     created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class WorkingState(Base):
+    __tablename__ = "working_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "user_id", "session_id", name="uq_working_scope"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    session_id = Column(String, nullable=False, index=True)
+    active_intent = Column(String, nullable=False)
+    plan_state = Column(String, nullable=False)
+    slots_json = Column(JSON, nullable=False, default=dict)
+    pending_action_json = Column(JSON, nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    updated_at = Column(DateTime, default=utc_now_naive, nullable=False)
+
+
+class MemoryEvent(Base):
+    __tablename__ = "memory_events"
+
+    id = Column(Integer, primary_key=True)
+    event_id = Column(String, nullable=False, unique=True, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    entity_refs_json = Column(JSON, nullable=False, default=list)
+    summary = Column(Text, nullable=False)
+    outcome = Column(String, nullable=False)
+    source_trace_id = Column(String, nullable=False, index=True)
+    occurred_at = Column(DateTime, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+
+
+class UserProfileMemory(Base):
+    __tablename__ = "user_profile_memories"
+
+    id = Column(Integer, primary_key=True)
+    memory_id = Column(String, nullable=False, unique=True, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    memory_key = Column(String, nullable=False, index=True)
+    memory_value = Column(JSON, nullable=False)
+    source_type = Column(String, nullable=False)
+    confidence = Column(Float, nullable=False)
+    source_trace_id = Column(String, nullable=False, index=True)
+    valid_from = Column(DateTime, nullable=False)
+    valid_until = Column(DateTime, nullable=True)
+    superseded_by = Column(String, nullable=True)
