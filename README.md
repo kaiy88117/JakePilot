@@ -15,6 +15,7 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 - 上门安装或维修的多轮信息补全、工程师匹配、时间检查与 SQLite 写入。
 - `/api/chat/stream` 结构化 SSE 协议，过滤内部思维标记，只公开路由、工具状态、确认请求、回答和终止事件。
 - 电商售后工作台首页，支持快捷问题、流式回答、运行时间线和移动端布局。
+- 离线 Agent Smoke 评测：冻结 Case、复现匿名 SQLite 工具环境，确定性校验工具顺序、禁止调用、终态、确认、写入次数与步数上限，并生成绑定 Git SHA 的脱敏 Evidence Report。
 - 旧 `/chat/stream` 与 `/chat` 文本流接口继续保留。
 
 ## 规划中
@@ -97,6 +98,16 @@ JakePilot 通过 `/auth/login` 获取短期 Token，再调用非流式 `/chat`�
 ```
 
 部分历史测试会初始化外部模型；未配置 Provider 时需如实记录为环境阻塞，不能记为测试通过。
+
+### 离线 Agent Smoke 评测
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_agent_eval
+```
+
+默认运行 6 条订单售后确定性 Smoke Case，报告写入 `artifacts/eval/reports/`。报告包含数据集版本、Git SHA、每项断言的分子/分母、脱敏轨迹和回答摘要哈希，不保存完整问题、答案或工具参数。
+
+这 6 条 Case 只用于验证评测框架和关键安全闭环，不是设计文档中规划的 200 条正式 Golden Set，也不能作为简历中的正式业务效果指标。正式指标必须扩充数据集、冻结版本并按同一配置重复运行后再填写。
 
 ## 项目沿革与授权提示
 

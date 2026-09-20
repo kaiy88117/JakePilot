@@ -154,6 +154,17 @@ HERMESRAG_TIMEOUT_SECONDS=45
 
 该链路会继续询问缺失槽位，可用于说明同一中心路由下还保留原有预约 Agent。
 
+### 可选场景：展示离线评测证据
+
+另开终端执行：
+
+```powershell
+Set-Location 'D:\superhermes agentic\JakePilot'
+.\.venv\Scripts\python.exe -m scripts.run_agent_eval
+```
+
+命令会运行 6 条离线订单售后 Smoke Case，覆盖查询、物流、退货资格、规则拒绝、确认写入和重启恢复，并输出 Evidence Report 文件名。讲解时应说明这是评测框架的可重复 Smoke Set，不是 200 条正式 Golden Set；可以展示工具顺序、确认、终态、写入次数和步数上限的确定性校验结果，但不要把 6/6 写成正式简历指标。
+
 ## 5. 面试时的 30 秒讲法
 
 > 这是一个中心路由式电商售后 Agent。通用政策通过 Knowledge Tool 调用独立 HermesRAG；订单、物流和退货进入订单售后 Agent。系统用 Working、Episodic、Profile 三层记忆和 Context Engine 恢复任务，但订单事实始终通过工具实时回源。退货写操作还有参数冻结、二次确认和幂等 Action Ledger；前端通过安全 SSE 展示路由、工具、证据和记忆装配摘要，不暴露思维链、凭据或记忆正文。

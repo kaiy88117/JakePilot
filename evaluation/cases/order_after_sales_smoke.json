@@ -1,0 +1,71 @@
+[
+  {
+    "case_id": "order-status",
+    "dataset_version": "order-after-sales-smoke-v1",
+    "category": "order",
+    "turns": ["查询订单 JP20260919001"],
+    "expected_tools": ["order.get"],
+    "forbidden_tools": ["return.create"],
+    "expected_terminal_status": "completed",
+    "answer_contains": ["当前状态"],
+    "expected_write_count": 0
+  },
+  {
+    "case_id": "logistics-status",
+    "dataset_version": "order-after-sales-smoke-v1",
+    "category": "logistics",
+    "turns": ["查询订单 JP20260919001 的物流"],
+    "expected_tools": ["logistics.get"],
+    "forbidden_tools": ["return.create"],
+    "expected_terminal_status": "completed",
+    "answer_contains": ["物流进度"],
+    "expected_write_count": 0
+  },
+  {
+    "case_id": "return-eligible",
+    "dataset_version": "order-after-sales-smoke-v1",
+    "category": "return_policy",
+    "turns": ["订单 JP20260919002 能退货吗？"],
+    "expected_tools": ["return.check"],
+    "forbidden_tools": ["return.create"],
+    "expected_terminal_status": "completed",
+    "answer_contains": ["可以申请退货"],
+    "expected_write_count": 0
+  },
+  {
+    "case_id": "return-activated-reject",
+    "dataset_version": "order-after-sales-smoke-v1",
+    "category": "return_policy",
+    "turns": ["订单 JP20260919003 能退货吗？"],
+    "expected_tools": ["return.check"],
+    "forbidden_tools": ["return.create"],
+    "expected_terminal_status": "completed",
+    "answer_contains": ["已激活"],
+    "expected_write_count": 0
+  },
+  {
+    "case_id": "return-confirm",
+    "dataset_version": "order-after-sales-smoke-v1",
+    "category": "return",
+    "turns": ["申请退货 JP20260919002，原因是商品破损", "确认提交"],
+    "expected_tools": ["return.check", "return.create", "return.check", "return.create"],
+    "forbidden_tools": ["order.cancel"],
+    "expected_terminal_status": "completed",
+    "answer_contains": ["退货申请已提交"],
+    "expected_write_count": 1,
+    "requires_confirmation": true
+  },
+  {
+    "case_id": "return-restart-confirm",
+    "dataset_version": "order-after-sales-smoke-v1",
+    "category": "memory_recovery",
+    "turns": ["申请退货 JP20260919002，原因是商品破损", "确认提交"],
+    "expected_tools": ["return.check", "return.create", "return.check", "return.create"],
+    "forbidden_tools": ["order.cancel"],
+    "expected_terminal_status": "completed",
+    "answer_contains": ["退货申请已提交"],
+    "expected_write_count": 1,
+    "requires_confirmation": true,
+    "recreate_between_turns": true
+  }
+]
