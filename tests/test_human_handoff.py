@@ -168,6 +168,9 @@ def test_explicit_handoff_matcher_accepts_action_requests(message):
         "人工客服电话是多少",
         "怎么联系人工客服",
         "不要转人工，继续查询订单",
+        "不需要人工客服",
+        "不要人工客服",
+        "不转人工",
     ],
 )
 def test_explicit_handoff_matcher_rejects_informational_questions(message):
@@ -308,9 +311,14 @@ def test_successful_handoff_clears_pending_return_and_working_memory(tmp_path):
             "session-a", HandoffService(database_url)
         ),
     )
-    asyncio.run(
-        collect(router.route_to_handoff("请转人工客服", "turn-clear-flow"))
-    )
+    async def stop_after_first_public_event():
+        stream = router.route_to_handoff(
+            "请转人工客服", "turn-clear-flow"
+        )
+        await anext(stream)
+        await stream.aclose()
+
+    asyncio.run(stop_after_first_public_event())
 
     assert order_agent.has_active_flow is False
     assert memory.get_working("demo", "user-a", "session-a") is None

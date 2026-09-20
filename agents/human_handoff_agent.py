@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from uuid import uuid4
 
 from runtime.contracts import TurnRequest, TurnStatus
@@ -19,7 +20,7 @@ _ACTION_PATTERNS = (
     re.compile(r"(?:请|需要|要求)?客服介入"),
 )
 _NEGATED_ACTION_PREFIX = re.compile(
-    r"(?:不要|不用|不需要|不想|无需|暂不|别(?:给我)?)(?:再|立即|马上)?$"
+    r"(?:不要|不用|不需要|不想|无需|暂不|别(?:给我)?|不)(?:再|立即|马上)?$"
 )
 _INFORMATIONAL_PREFIX = re.compile(r"(?:怎么|如何|什么是|为什么)$")
 
@@ -72,7 +73,12 @@ class HumanHandoffAgent:
         register_handoff_tool(registry, service)
         self.runtime = BoundedAgentRuntime(registry)
 
-    async def run_stream(self, message: str, turn_id: str | None = None):
+    async def run_stream(
+        self,
+        message: str,
+        turn_id: str | None = None,
+        on_success: Callable[[], None] | None = None,
+    ):
         runtime_turn_id = turn_id or f"turn_{uuid4().hex}"
         turn = TurnRequest(
             turn_id=runtime_turn_id,
@@ -93,6 +99,12 @@ class HumanHandoffAgent:
         for event in run.events:
             if event.type == "handoff_created":
                 ticket_no = str(event.data.get("ticket_no", ""))
+
+        if run.outcome.status == TurnStatus.HANDED_OFF and ticket_no:
+            if on_success is not None:
+                on_success()
+
+        for event in run.events:
             yield f"[EVENT]{event.model_dump_json()}"
 
         if run.outcome.status == TurnStatus.HANDED_OFF and ticket_no:
