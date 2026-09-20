@@ -17,15 +17,19 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 - `/api/chat/stream` 结构化 SSE 协议，过滤内部思维标记，只公开路由、工具状态、确认请求、回答和终止事件。
 - 电商售后工作台首页，支持快捷问题、流式回答、运行时间线和移动端布局。
 - 离线 Agent Smoke 评测：冻结 Case、复现匿名 SQLite 工具环境，确定性校验工具顺序、禁止调用、终态、确认、写入次数与步数上限，并生成绑定 Git SHA 的脱敏 Evidence Report。
+- 正式评测开发门禁：支持多领域冻结 Case、三次重复运行、Semantic Judge 隔离、不可变 Evidence Store 与 CI 证据校验；完整 Golden Set 和真实指标仍需后续执行。
+- 显式转人工工具、二次确认、幂等工单和脱敏接管摘要，并在终态异步沉淀可审计的长期记忆。
+- 预约结构化决策模型的 Schema、业务 Guard、Shadow Gateway、强模型回退以及数据和组件评测骨架。
 - 旧 `/chat/stream` 与 `/chat` 文本流接口继续保留。
 
-## 规划中
+## 后续工作
 
-- Checkpoint、异常恢复及轨迹级评测。
-- 面向预约槽位抽取与下一动作选择的本地小模型后训练。
+- 扩充并人工审核 200 条系统级 Golden Set，运行 Baseline 与 JakePilot 的正式重复对比。
+- 构建预约决策训练数据，执行 SFT、DPO、GGUF 量化与 Shadow 验证；真实训练完成前不填写后训练效果指标。
 
 详细设计见 `docs/superpowers/specs/2026-09-17-ecommerce-agent-architecture-design.md`。
 本地启动、数据重置和面试演示顺序见 [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md)。
+后训练的实施步骤、故障推演和面试问答见 [`docs/interview/APPOINTMENT_POST_TRAINING_INTERVIEW_GUIDE.md`](docs/interview/APPOINTMENT_POST_TRAINING_INTERVIEW_GUIDE.md)。
 
 ## 请求链路
 
