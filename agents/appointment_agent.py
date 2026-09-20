@@ -1,7 +1,14 @@
 from dotenv import load_dotenv
+import json
+import os
 import uuid
+from datetime import datetime
+from pathlib import Path
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from config.model_provider import create_chat_model
+from appointment_decision.client import LocalDecisionClient
+from appointment_decision.gateway import AppointmentDecisionGateway
+from appointment_training.evaluator import AppointmentModelReport
 from .appointment import (
     InputParser, 
     TechnicianFinder, 
@@ -23,11 +30,24 @@ class AppointmentAgent:
     3. 协调整个预约流程
     """
     
-    def __init__(self, session_id=None, unrelated_callback=None):
+    def __init__(
+        self,
+        session_id=None,
+        unrelated_callback=None,
+        decision_gateway=None,
+    ):
         # 基础设置
         self.session_id = session_id or str(uuid.uuid4())
         self.unrelated_callback = unrelated_callback
         self.state = None
+        if decision_gateway is None:
+            (
+                self.decision_gateway,
+                self.decision_mode_reason,
+            ) = self._decision_gateway_from_env()
+        else:
+            self.decision_gateway = decision_gateway
+            self.decision_mode_reason = None
         
         # 初始化LLM
         self.llm = self._initialize_llm()
@@ -63,6 +83,95 @@ class AppointmentAgent:
             chat_history = InMemoryChatMessageHistory()
             self.chats_by_session_id[session_id] = chat_history
         return chat_history
+
+    @staticmethod
+    def _resolve_decision_mode(
+        requested_mode: str,
+        evidence_dir: Path,
+    ) -> tuple[str, str | None]:
+        normalized = requested_mode.strip().lower()
+        if normalized not in {"disabled", "shadow", "local_first"}:
+            return "disabled", "invalid_mode"
+        if normalized != "local_first":
+            return normalized, None
+
+        reports = sorted(
+            Path(evidence_dir).glob("appointment_model_*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if not reports:
+            return "shadow", "formal_evidence_missing"
+        try:
+            report = AppointmentModelReport.model_validate_json(
+                reports[0].read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return "shadow", "formal_evidence_missing"
+        if not (
+            report.formal_benchmark
+            and report.promotion_eligible
+            and report.sample_count >= 150
+        ):
+            return "shadow", "formal_evidence_missing"
+        return "local_first", None
+
+    @classmethod
+    def _decision_gateway_from_env(cls):
+        requested = os.getenv("APPOINTMENT_DECISION_MODE", "disabled")
+        evidence_dir = Path(
+            os.getenv(
+                "APPOINTMENT_MODEL_EVIDENCE_DIR",
+                "artifacts/appointment-model/reports",
+            )
+        )
+        mode, reason = cls._resolve_decision_mode(requested, evidence_dir)
+        return AppointmentDecisionGateway(mode, LocalDecisionClient.from_env()), reason
+
+    def _evaluate_decision_model(
+        self,
+        user_input: str,
+        strong_data: dict,
+        *,
+        recent_history: tuple[str, ...],
+        current_time: datetime | None = None,
+    ) -> tuple[dict, str]:
+        request = InputParser.build_decision_request(
+            user_input,
+            recent_history=recent_history,
+            appointment_history=self.appointment_history,
+            current_time=current_time,
+        )
+        strong_decision = InputParser.legacy_data_to_decision(
+            strong_data,
+            self.appointment_history,
+        )
+        outcome = self.decision_gateway.decide(
+            request,
+            lambda _request: strong_decision,
+        )
+        selected_data = strong_data
+        if (
+            self.decision_gateway.mode == "local_first"
+            and outcome.source == "local_model"
+        ):
+            selected_data = InputParser.decision_to_legacy_data(
+                outcome.decision,
+                strong_data,
+            )
+
+        trace_data = outcome.trace.model_dump(mode="json")
+        if self.decision_mode_reason and not trace_data["fallback_reason"]:
+            trace_data["fallback_reason"] = self.decision_mode_reason
+        event = {
+            "type": "decision_model_trace",
+            "data": trace_data,
+        }
+        return selected_data, "[EVENT]" + json.dumps(
+            event,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
     
     def reset(self):
         """重置预约历史和状态"""
@@ -91,6 +200,12 @@ class AppointmentAgent:
         if user_input is None:
             user_input = input("用户：")
         
+        recent_history = tuple(
+            str(message.content)
+            for message in self.chat_history.messages
+            if message.type == "human"
+        )
+
         # 1. 解析用户输入（内部 JSON，不向用户流式输出，避免英文字段名暴露在聊天界面）
         ai_content = ""
         for token in self.input_parser.parse_stream(user_input, self.chat_history):
@@ -99,6 +214,12 @@ class AppointmentAgent:
         try:
             # 2. 解析AI返回的数据
             data = self.input_parser.parse_data(ai_content)
+            data, decision_event = self._evaluate_decision_model(
+                user_input,
+                data,
+                recent_history=recent_history,
+            )
+            yield decision_event
             self.finished = self.appointment_processor.update_history_from_data(self.appointment_history, data)
             
             # 3. 处理与预约无关的请求

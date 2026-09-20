@@ -5,11 +5,19 @@
 """
 
 import json
+import re
+from datetime import datetime, timezone
 from typing import Dict, Any, Generator
 from langchain.prompts import PromptTemplate
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, AIMessage
+
+from appointment_decision import (
+    AppointmentDecision,
+    AppointmentSlots,
+    DecisionRequest,
+)
 
 
 class InputParser:
@@ -98,3 +106,164 @@ class InputParser:
                 "unrelated": False,
                 "missing_info": ["所有信息"]
             }
+
+    @staticmethod
+    def build_decision_request(
+        user_input: str,
+        *,
+        recent_history: tuple[str, ...],
+        appointment_history: Dict[str, Any],
+        current_time: datetime | None = None,
+    ) -> DecisionRequest:
+        """Project legacy state onto the narrow local-model contract."""
+        confirmed_values: dict[str, Any] = {}
+        for name in (
+            "order_id",
+            "product_ref",
+            "service_type",
+            "issue_type",
+            "region",
+            "date_range",
+            "slot_id",
+            "confirmation",
+        ):
+            value = appointment_history.get(name)
+            if value not in (None, "", "未知"):
+                confirmed_values[name] = value
+        try:
+            confirmed_slots = AppointmentSlots(**confirmed_values)
+        except (TypeError, ValueError):
+            confirmed_slots = AppointmentSlots()
+        return DecisionRequest(
+            message=user_input,
+            recent_appointment_history=recent_history[-6:],
+            confirmed_slots=confirmed_slots,
+            current_time=current_time or datetime.now(timezone.utc),
+            allowed_actions=(
+                "ask_user",
+                "query_slots",
+                "request_confirmation",
+                "finish",
+            ),
+        )
+
+    @staticmethod
+    def legacy_data_to_decision(
+        data: Dict[str, Any],
+        appointment_history: Dict[str, Any],
+    ) -> AppointmentDecision:
+        """Normalize the authoritative strong-model parse for comparison."""
+        project = _known(data.get("project")) or _known(
+            appointment_history.get("project")
+        )
+        service_type = _service_type(project)
+        product_ref = _product_ref(project, service_type)
+        date_range = _known(data.get("date_range")) or _known(
+            data.get("start_time")
+        )
+        slot_id = _known(data.get("slot_id")) or _known(
+            appointment_history.get("slot_id")
+        )
+        region = _known(data.get("region")) or _known(
+            appointment_history.get("region")
+        )
+        confirmation = _is_positive_confirmation(data.get("confirmation"))
+        slots = AppointmentSlots(
+            order_id=_known(data.get("order_id")),
+            product_ref=product_ref,
+            service_type=service_type,
+            issue_type=_known(data.get("issue_type")),
+            region=region,
+            date_range=date_range,
+            slot_id=slot_id,
+            confirmation=confirmation,
+        )
+
+        if slot_id and confirmation:
+            action = "finish"
+            missing_slots: tuple[str, ...] = ()
+        elif slot_id:
+            action = "request_confirmation"
+            missing_slots = ()
+        elif all((product_ref, service_type, region, date_range)):
+            action = "query_slots"
+            missing_slots = ()
+        else:
+            action = "ask_user"
+            missing_slots = tuple(
+                name
+                for name in (
+                    "product_ref",
+                    "service_type",
+                    "region",
+                    "date_range",
+                )
+                if getattr(slots, name) is None
+            )
+        return AppointmentDecision(
+            action=action,
+            slots=slots,
+            missing_slots=missing_slots,
+        )
+
+    @staticmethod
+    def decision_to_legacy_data(
+        decision: AppointmentDecision,
+        baseline: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Adapt a validated local decision without bypassing legacy guards."""
+        data = dict(baseline)
+        slots = decision.slots
+        if slots.product_ref:
+            service_label = {
+                "install": "安装",
+                "inspect": "检测",
+                "repair": "维修",
+            }.get(slots.service_type, "")
+            data["project"] = f"{slots.product_ref}{service_label}"
+        if slots.date_range:
+            data["start_time"] = slots.date_range
+        if slots.confirmation:
+            data["confirmation"] = "是"
+        data["unrelated"] = False
+        data["missing_info"] = list(decision.missing_slots)
+        data["info_complete"] = (
+            decision.action != "ask_user"
+            and all(
+                data.get(name) not in (None, "", "未知")
+                for name in ("start_time", "project", "duration")
+            )
+        )
+        return data
+
+
+def _known(value: Any) -> str | None:
+    if value in (None, "", "未知", "无"):
+        return None
+    return str(value).strip() or None
+
+
+def _service_type(project: str | None) -> str | None:
+    if not project:
+        return None
+    if "安装" in project:
+        return "install"
+    if any(word in project for word in ("检测", "检查", "检修")):
+        return "inspect"
+    if any(word in project for word in ("维修", "修理", "故障")):
+        return "repair"
+    return None
+
+
+def _product_ref(project: str | None, service_type: str | None) -> str | None:
+    if not project:
+        return None
+    if not service_type:
+        return project
+    cleaned = re.sub(r"(安装|检测|检查|检修|维修|修理|故障)", "", project)
+    return cleaned.strip() or project
+
+
+def _is_positive_confirmation(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized in {"是", "好", "可以", "同意", "确定", "yes", "ok", "行"}

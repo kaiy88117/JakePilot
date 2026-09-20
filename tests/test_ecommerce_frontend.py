@@ -244,3 +244,37 @@ process.stdout.write(JSON.stringify({{ grounded, fallback, memory }}));
             "detail": "恢复工作状态 · 2 条历史事件 · 1 条偏好",
         },
     }
+
+
+def test_frontend_describes_safe_appointment_decision_trace():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ describeRuntimeEvent }} = require({json.dumps(str(script_path))});
+const shadow = describeRuntimeEvent('decision_model_trace', {{
+  mode: 'shadow', source: 'strong_model', validation_status: 'passed',
+  fallback_reason: null
+}});
+const fallback = describeRuntimeEvent('decision_model_trace', {{
+  mode: 'local_first', source: 'strong_model_fallback',
+  validation_status: 'failed', fallback_reason: 'invalid_json'
+}});
+process.stdout.write(JSON.stringify({{ shadow, fallback }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert json.loads(result.stdout) == {
+        "shadow": {
+            "title": "校验预约决策",
+            "detail": "影子对比 · 强模型生效 · 校验通过",
+        },
+        "fallback": {
+            "title": "预约决策已回退",
+            "detail": "本地优先 · 非法结构",
+        },
+    }

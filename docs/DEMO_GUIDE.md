@@ -157,6 +157,23 @@ HERMESRAG_TIMEOUT_SECONDS=45
 
 该链路会继续询问缺失槽位，可用于说明同一中心路由下还保留原有预约 Agent。
 
+预约结构化模型运行边界已接入，但演示默认配置为
+`APPOINTMENT_DECISION_MODE=disabled`，因此不会访问本地推理端点。需要比较本地
+模型时可改为 `shadow`：本地模型会生成结构化决策并接受 Schema、已确认槽位和
+业务前置条件校验，但远端强模型结果仍是唯一权威结果。`local_first` 只有在
+`APPOINTMENT_MODEL_EVIDENCE_DIR` 中存在不少于 150 条冻结样本产生、且
+`promotion_eligible=true` 的正式报告时才会启用，否则自动降为 `shadow`。
+超时、非法 JSON、未允许动作或已确认槽位冲突均回退强模型；Trace 只展示模式、
+来源、耗时、校验状态和回退原因，不包含原始消息、槽位值或凭据。
+
+数据校验和组件评测命令如下；运行正式评测前需要先准备合规的外部 JSONL 和本地
+OpenAI 兼容模型服务，项目仓库不附带训练数据或权重：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.validate_appointment_dataset --input D:\data\appointment.jsonl --formal
+.\.venv\Scripts\python.exe -m scripts.run_appointment_model_eval --input D:\data\appointment.jsonl --output-dir artifacts\appointment-model\reports --code-revision <git-sha> --prompt-version appointment-json-v1 --model-version <model-id> --hardware-label <hardware> --formal
+```
+
 ### 可选场景：展示离线评测证据
 
 另开终端执行：

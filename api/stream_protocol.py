@@ -36,6 +36,15 @@ _PUBLIC_RUNTIME_FIELDS = {
             "dropped_count",
         }
     ),
+    "decision_model_trace": frozenset(
+        {
+            "mode",
+            "source",
+            "latency_ms",
+            "validation_status",
+            "fallback_reason",
+        }
+    ),
 }
 
 

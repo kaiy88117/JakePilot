@@ -125,6 +125,31 @@
             parts.push(`${Number(payload.profile_count) || 0} 条偏好`);
             return { title: "装配任务上下文", detail: parts.join(" · ") };
         }
+        if (event === "decision_model_trace") {
+            const modeLabels = {
+                disabled: "强模型路径",
+                shadow: "影子对比",
+                local_first: "本地优先"
+            };
+            const fallbackLabels = {
+                timeout: "本地模型超时",
+                invalid_json: "非法结构",
+                schema_validation: "Schema 校验失败",
+                confirmed_slot_conflict: "已确认槽位冲突",
+                business_precondition: "业务前置条件失败",
+                action_not_allowed: "动作不在白名单",
+                formal_evidence_missing: "缺少正式评测证据",
+                local_error: "本地服务异常"
+            };
+            const mode = modeLabels[payload.mode] || "结构化决策";
+            if (payload.source === "strong_model_fallback" || payload.fallback_reason) {
+                const reason = fallbackLabels[payload.fallback_reason] || "已使用安全回退";
+                return { title: "预约决策已回退", detail: `${mode} · ${reason}` };
+            }
+            const source = payload.source === "local_model" ? "本地模型生效" : "强模型生效";
+            const validation = payload.validation_status === "passed" ? "校验通过" : "未执行本地校验";
+            return { title: "校验预约决策", detail: `${mode} · ${source} · ${validation}` };
+        }
         return null;
     }
 
@@ -204,7 +229,7 @@
         } else if (event === "route_selected") {
             currentRoute.textContent = payload.label;
             appendTimeline("完成任务路由", payload.label);
-        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required" || event === "knowledge_retrieval" || event === "memory_context") {
+        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required" || event === "knowledge_retrieval" || event === "memory_context" || event === "decision_model_trace") {
             const description = describeRuntimeEvent(event, payload);
             if (description) appendTimeline(description.title, description.detail);
         } else if (event === "answer_delta") {
