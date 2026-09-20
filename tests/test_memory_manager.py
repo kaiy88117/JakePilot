@@ -114,6 +114,37 @@ def test_events_are_ranked_by_entity_match_then_recency(tmp_path):
     ) == []
 
 
+def test_record_event_once_returns_existing_scoped_event(tmp_path):
+    memory = manager(tmp_path)
+    first = memory.record_event_once(
+        tenant_id="demo",
+        user_id="user-a",
+        event_type="return_requested",
+        candidate_key="return:JP20260920001:AS-001",
+        summary="订单 JP20260920001 已提交退货申请，申请编号 AS-001",
+        outcome="completed",
+        entity_refs=["JP20260920001"],
+        source_trace_id="turn-1",
+        occurred_at=utc(),
+    )
+    second = memory.record_event_once(
+        tenant_id="demo",
+        user_id="user-a",
+        event_type="return_requested",
+        candidate_key="return:JP20260920001:AS-001",
+        summary="重复调用不能改写",
+        outcome="completed",
+        entity_refs=["JP20260920001"],
+        source_trace_id="turn-1",
+        occurred_at=utc(),
+    )
+
+    assert first["created"] is True
+    assert second["created"] is False
+    assert first["event_id"] == second["event_id"]
+    assert second["summary"] == first["summary"]
+
+
 def test_profile_update_supersedes_previous_current_value(tmp_path):
     memory = manager(tmp_path)
     first = memory.set_profile(

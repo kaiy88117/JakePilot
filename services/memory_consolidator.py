@@ -7,6 +7,8 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from services.memory_manager import MemoryManager
+
 
 TurnCompletionStatus = Literal[
     "completed", "cancelled", "handed_off", "failed", "needs_input"
@@ -221,3 +223,128 @@ class RuleBasedMemoryCandidateExtractor:
                 confidence=1.0,
             )
         return None
+
+
+class ConsolidationResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    written: int
+    skipped: int
+    rejected: int
+    memories: tuple[dict, ...] = ()
+
+
+_ALLOWED_EVENT_TYPES = {
+    "return_requested",
+    "service_booked",
+    "handoff_created",
+}
+_ALLOWED_PROFILE_KEYS = {
+    "service_time_preference",
+    "communication_language",
+    "address_region_ref",
+    "product_category_preference",
+}
+_SENSITIVE_PATTERNS = (
+    re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)"),
+    re.compile(r"(?<!\d)\d{15,19}(?!\d)"),
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    re.compile(
+        r"(?:api[_-]?key|access[_-]?token|authorization|password)\s*[:=]",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:省|市|区|县).{0,24}(?:路|街|道|巷|号|栋|单元|室)",
+    ),
+)
+
+
+class MemoryConsolidator:
+    """Validate and persist minimal long-term memories."""
+
+    def __init__(
+        self,
+        memory_manager: MemoryManager,
+        extractor: MemoryCandidateExtractor | None = None,
+    ) -> None:
+        self.memory_manager = memory_manager
+        self.extractor = extractor or RuleBasedMemoryCandidateExtractor()
+
+    def consolidate(self, completion: TurnCompletion) -> ConsolidationResult:
+        written = 0
+        skipped = 0
+        rejected = 0
+        memories: list[dict] = []
+        for candidate in self.extractor.extract(completion):
+            if not self._candidate_is_safe(candidate):
+                rejected += 1
+                continue
+            if candidate.kind == "episodic":
+                memory = self.memory_manager.record_event_once(
+                    tenant_id=completion.tenant_id,
+                    user_id=completion.user_id,
+                    event_type=candidate.event_type or "",
+                    candidate_key=candidate.candidate_key,
+                    summary=candidate.summary or "",
+                    outcome=candidate.outcome or "",
+                    entity_refs=list(candidate.entity_refs),
+                    source_trace_id=completion.turn_id,
+                )
+                created = bool(memory.pop("created", False))
+                if created:
+                    written += 1
+                    memories.append(memory)
+                else:
+                    skipped += 1
+                continue
+
+            current = self.memory_manager.recall_profiles(
+                completion.tenant_id,
+                completion.user_id,
+                keys=[candidate.memory_key or ""],
+                limit=1,
+            )
+            if current and (
+                current[0]["source_trace_id"] == completion.turn_id
+                and current[0]["memory_value"] == candidate.memory_value
+            ):
+                skipped += 1
+                continue
+            memory = self.memory_manager.set_profile(
+                tenant_id=completion.tenant_id,
+                user_id=completion.user_id,
+                memory_key=candidate.memory_key or "",
+                memory_value=candidate.memory_value,
+                source_type="explicit",
+                confidence=1.0,
+                source_trace_id=completion.turn_id,
+            )
+            written += 1
+            memories.append(memory)
+
+        return ConsolidationResult(
+            written=written,
+            skipped=skipped,
+            rejected=rejected,
+            memories=tuple(memories),
+        )
+
+    @staticmethod
+    def _candidate_is_safe(candidate: MemoryCandidate) -> bool:
+        if candidate.kind == "episodic":
+            if candidate.event_type not in _ALLOWED_EVENT_TYPES:
+                return False
+            values = [candidate.summary or "", *candidate.entity_refs]
+        else:
+            if (
+                candidate.memory_key not in _ALLOWED_PROFILE_KEYS
+                or candidate.source_type != "explicit"
+                or candidate.confidence != 1.0
+            ):
+                return False
+            values = [str(candidate.memory_value or "")]
+        return not any(
+            pattern.search(value)
+            for value in values
+            for pattern in _SENSITIVE_PATTERNS
+        )

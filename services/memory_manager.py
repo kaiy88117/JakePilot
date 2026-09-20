@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 from db.base.session_manager import SessionManager
@@ -92,6 +93,40 @@ class MemoryManager:
         expires_at: datetime | None = None,
     ) -> dict:
         return self.repository.record_event(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            event_type=event_type,
+            summary=summary,
+            outcome=outcome,
+            entity_refs=entity_refs or [],
+            source_trace_id=source_trace_id,
+            occurred_at=_utc_naive(occurred_at),
+            expires_at=_utc_naive(expires_at) if expires_at else None,
+        )
+
+    def record_event_once(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        event_type: str,
+        candidate_key: str,
+        summary: str,
+        outcome: str,
+        entity_refs: list[str] | None = None,
+        source_trace_id: str,
+        occurred_at: datetime | None = None,
+        expires_at: datetime | None = None,
+    ) -> dict:
+        material = "\x1f".join(
+            [tenant_id, user_id, source_trace_id, event_type, candidate_key]
+        )
+        event_id = (
+            "mem_evt_"
+            + hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
+        )
+        return self.repository.record_event_once(
+            event_id=event_id,
             tenant_id=tenant_id,
             user_id=user_id,
             event_type=event_type,

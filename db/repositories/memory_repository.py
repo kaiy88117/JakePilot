@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from db.base.session_manager import SessionManager
 from db.models import MemoryEvent, UserProfileMemory, WorkingState
+from sqlalchemy.exc import IntegrityError
 
 
 class MemoryRepository:
@@ -122,6 +123,63 @@ class MemoryRepository:
             session.add(row)
             session.flush()
             return self._event_dict(row)
+
+    def record_event_once(
+        self,
+        *,
+        event_id: str,
+        tenant_id: str,
+        user_id: str,
+        event_type: str,
+        summary: str,
+        outcome: str,
+        entity_refs: list[str],
+        source_trace_id: str,
+        occurred_at: datetime,
+        expires_at: datetime | None,
+    ) -> dict:
+        with self.session_manager.session_scope() as session:
+            existing = (
+                session.query(MemoryEvent)
+                .filter(
+                    MemoryEvent.event_id == event_id,
+                    MemoryEvent.tenant_id == tenant_id,
+                    MemoryEvent.user_id == user_id,
+                )
+                .first()
+            )
+            if existing is not None:
+                return {**self._event_dict(existing), "created": False}
+            row = MemoryEvent(
+                event_id=event_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                event_type=event_type,
+                entity_refs_json=list(dict.fromkeys(entity_refs)),
+                summary=summary,
+                outcome=outcome,
+                source_trace_id=source_trace_id,
+                occurred_at=occurred_at,
+                expires_at=expires_at,
+            )
+            session.add(row)
+            try:
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                existing = (
+                    session.query(MemoryEvent)
+                    .filter(
+                        MemoryEvent.event_id == event_id,
+                        MemoryEvent.tenant_id == tenant_id,
+                        MemoryEvent.user_id == user_id,
+                    )
+                    .first()
+                )
+                if existing is None:
+                    raise
+                return {**self._event_dict(existing), "created": False}
+            return {**self._event_dict(row), "created": True}
 
     def recall_events(
         self,
