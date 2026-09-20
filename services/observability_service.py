@@ -17,16 +17,33 @@ _METRIC_LABELS = {
     "bounded_termination": "有界终止",
 }
 
+_HANDOFF_REASON_LABELS = {
+    "user_requested": "用户主动请求",
+    "evidence_insufficient": "证据不足",
+    "risk_threshold": "风险升级",
+    "tool_failure": "工具执行失败",
+    "intent_unstable": "意图无法稳定判断",
+}
+
 
 class ObservabilityService:
     """Build a safe dashboard projection from checkpoints and eval evidence."""
 
-    def __init__(self, journal, reports_dir: str | Path) -> None:
+    def __init__(
+        self,
+        journal,
+        reports_dir: str | Path,
+        handoff_reader=None,
+        handoff_tenant_id: str = "demo",
+    ) -> None:
         self.journal = journal
         self.reports_dir = Path(reports_dir)
+        self.handoff_reader = handoff_reader
+        self.handoff_tenant_id = handoff_tenant_id
 
     def snapshot(self) -> dict:
         turns = self.journal.list_recent(limit=20)
+        handoffs = self._recent_handoffs()
         return {
             "evaluation": self._latest_evaluation(),
             "turn_summary": {
@@ -40,7 +57,39 @@ class ObservabilityService:
                 ),
             },
             "turns": turns,
+            "handoff_summary": {
+                "total": len(handoffs),
+                "open": sum(item["status"] == "open" for item in handoffs),
+            },
+            "handoffs": handoffs,
         }
+
+    def _recent_handoffs(self) -> list[dict]:
+        if self.handoff_reader is None:
+            return []
+        try:
+            records = self.handoff_reader.list_recent(
+                self.handoff_tenant_id, limit=20
+            )
+        except Exception:
+            return []
+
+        projected = []
+        for record in records:
+            created_at = record.get("created_at", "")
+            if hasattr(created_at, "isoformat"):
+                created_at = created_at.isoformat()
+            projected.append(
+                {
+                    "ticket_no": str(record.get("ticket_no", "")),
+                    "reason_label": _HANDOFF_REASON_LABELS.get(
+                        record.get("reason_code"), "其他原因"
+                    ),
+                    "status": str(record.get("status", "unknown")),
+                    "created_at": str(created_at),
+                }
+            )
+        return projected
 
     def _latest_evaluation(self) -> dict:
         if not self.reports_dir.exists():

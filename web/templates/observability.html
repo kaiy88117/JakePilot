@@ -36,6 +36,7 @@
             <article><span>正常完成</span><strong>{{ snapshot.turn_summary.completed }}</strong><small>Runtime 终态</small></article>
             <article><span>成功投递</span><strong>{{ snapshot.turn_summary.delivered }}</strong><small>SSE 已送达</small></article>
             <article><span>业务写入</span><strong>{{ snapshot.turn_summary.business_writes }}</strong><small>已确认副作用</small></article>
+            <article><span>人工接管</span><strong>{{ snapshot.handoff_summary.open }}</strong><small>当前开放工单</small></article>
         </section>
 
         <div class="content-grid">
@@ -109,7 +110,33 @@
             <div class="empty-state"><strong>还没有 Turn 记录</strong><p>在工作台完成一次问答后刷新本页。</p></div>
             {% endif %}
         </section>
+
+        <section class="turn-panel" aria-labelledby="handoff-title">
+            <div class="section-heading">
+                <div><p class="section-kicker">Human handoff</p><h2 id="handoff-title">人工接管</h2></div>
+                <span>仅展示脱敏控制面状态</span>
+            </div>
+            {% if snapshot.handoffs %}
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>工单号</th><th>接管原因</th><th>状态</th><th>创建时间</th></tr></thead>
+                    <tbody>
+                    {% for handoff in snapshot.handoffs %}
+                    <tr>
+                        <td><code>{{ handoff.ticket_no }}</code></td>
+                        <td>{{ handoff.reason_label }}</td>
+                        <td><span class="state-pill" data-state="{{ handoff.status }}">{{ handoff.status }}</span></td>
+                        <td><time>{{ handoff.created_at }}</time></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><strong>还没有人工接管记录</strong><p>用户明确要求人工客服后，脱敏工单会显示在这里。</p></div>
+            {% endif %}
+        </section>
     </main>
-    <footer><span>JakePilot · local observability</span><span>原始消息、回答与工具参数不进入此视图</span></footer>
+    <footer><span>JakePilot · local observability</span><span>原始消息、回答、工单摘要与工具参数不进入此视图</span></footer>
 </body>
 </html>

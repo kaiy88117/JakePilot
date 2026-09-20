@@ -159,7 +159,13 @@ async def observability_page(request: Request):
     client_host = request.client.host if request.client is not None else None
     if not _is_local_client(client_host):
         raise HTTPException(status_code=403, detail="local admin access only")
-    snapshot = ObservabilityService(_get_turn_journal(), _REPORTS_DIR).snapshot()
+    from api.chat_handler import _get_handoff_service
+
+    snapshot = ObservabilityService(
+        _get_turn_journal(),
+        _REPORTS_DIR,
+        handoff_reader=_get_handoff_service(),
+    ).snapshot()
     return templates.TemplateResponse(
         "observability.html",
         {"request": request, "snapshot": snapshot},

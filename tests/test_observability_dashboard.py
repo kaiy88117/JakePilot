@@ -127,6 +127,46 @@ def test_observability_snapshot_has_honest_empty_evaluation_state(tmp_path):
     assert snapshot["turn_summary"]["total"] == 0
 
 
+def test_observability_projects_handoffs_without_raw_content(tmp_path):
+    class EmptyJournal:
+        def list_recent(self, limit=20):
+            return []
+
+    class FakeHandoffReader:
+        def list_recent(self, tenant_id, limit=20):
+            assert tenant_id == "demo"
+            return [
+                {
+                    "ticket_no": "HO-0001",
+                    "reason_code": "user_requested",
+                    "status": "open",
+                    "created_at": "2026-09-20T02:00:00Z",
+                    "updated_at": "2026-09-20T02:00:00Z",
+                    "summary": "private 13800138000",
+                    "verified_facts": ["raw_message"],
+                }
+            ]
+
+    snapshot = ObservabilityService(
+        EmptyJournal(),
+        tmp_path / "missing",
+        handoff_reader=FakeHandoffReader(),
+    ).snapshot()
+
+    assert snapshot["handoff_summary"] == {"total": 1, "open": 1}
+    assert snapshot["handoffs"] == [
+        {
+            "ticket_no": "HO-0001",
+            "reason_label": "用户主动请求",
+            "status": "open",
+            "created_at": "2026-09-20T02:00:00Z",
+        }
+    ]
+    serialized = json.dumps(snapshot, ensure_ascii=False)
+    assert "13800138000" not in serialized
+    assert "raw_message" not in serialized
+
+
 def test_observability_page_is_local_only_and_labels_smoke_results():
     assert _is_local_client("127.0.0.1") is True
     assert _is_local_client("::1") is True
@@ -150,6 +190,15 @@ def test_observability_page_is_local_only_and_labels_smoke_results():
                 "business_writes": 0,
             },
             "turns": [],
+            "handoff_summary": {"total": 1, "open": 1},
+            "handoffs": [
+                {
+                    "ticket_no": "HO-0001",
+                    "reason_label": "用户主动请求",
+                    "status": "open",
+                    "created_at": "2026-09-20T02:00:00Z",
+                }
+            ],
         }
     )
     page = _PageParser()
@@ -160,5 +209,9 @@ def test_observability_page_is_local_only_and_labels_smoke_results():
     assert "开发 Smoke 门禁" in visible
     assert "不是正式 Golden Set 指标" in visible
     assert "脱敏生命周期" in visible
+    assert "人工接管" in visible
+    assert "HO-0001" in visible
+    assert "用户主动请求" in visible
+    assert "raw_message" not in visible
     assert "/static/observability.css" in page.assets
     assert "/" in page.assets
