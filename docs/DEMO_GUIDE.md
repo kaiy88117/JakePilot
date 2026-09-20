@@ -196,8 +196,9 @@ Set-Location 'D:\superhermes agentic\JakePilot'
 .\.venv\Scripts\python.exe -m scripts.run_agent_eval --formal --model-version <model-id> --prompt-version <prompt-id> --tool-fixture-version <fixture-id>
 ```
 
-当前已经具备多领域调度器、受限 Semantic Judge、三轮结果聚合与脱敏正式证据写入能力，
-但尚未提交 200 条合规 Golden Set，也未补齐七类真实 Runner 适配器和 Baseline 实跑结果；
+当前已经具备多领域调度器、统一流式 Agent 适配器、受限 Semantic Judge、三轮结果聚合与
+脱敏正式证据写入能力，但尚未提交 200 条合规 Golden Set，也未补齐七类隔离测试夹具和
+Baseline 实跑结果；
 因此管理员页仍只能展示 Smoke 报告。只有报告通过上述门禁、三轮明细与汇总一致且完成
 脱敏落盘时，页面才会标记为“正式 Golden Set”。
 
