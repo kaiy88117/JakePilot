@@ -39,7 +39,17 @@ class MultiDomainEvalRunner:
             suite = self.runners[category].run(case_tuple)
             expected_ids = {case.case_id for case in case_tuple}
             actual_ids = {case_run.case_id for case_run in suite.case_runs}
-            if actual_ids != expected_ids or len(suite.case_runs) != len(case_tuple):
+            outputs_are_consistent = all(
+                case_run.category == category
+                and case_run.observation.case_id == case_run.case_id
+                and case_run.result.case_id == case_run.case_id
+                for case_run in suite.case_runs
+            )
+            if (
+                actual_ids != expected_ids
+                or len(suite.case_runs) != len(case_tuple)
+                or not outputs_are_consistent
+            ):
                 raise ValueError(
                     f"runner result mismatch for category {category}"
                 )

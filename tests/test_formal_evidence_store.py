@@ -152,3 +152,31 @@ def test_formal_evidence_store_rejects_summary_that_disagrees_with_case_runs(
         )
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_formal_evidence_store_rejects_mislabeled_case_category(tmp_path):
+    cases = _cases()
+    valid_run = _suite(cases)
+    first = valid_run.case_runs[0]
+    mislabeled = CaseRun(
+        case_id=first.case_id,
+        category="order_logistics",
+        observation=first.observation,
+        result=first.result,
+    )
+    invalid_run = SuiteRun(
+        dataset_version=valid_run.dataset_version,
+        dataset_digest=valid_run.dataset_digest,
+        case_runs=(mislabeled, *valid_run.case_runs[1:]),
+        summary=valid_run.summary,
+    )
+
+    with pytest.raises(ValueError, match="category does not match dataset"):
+        FormalEvidenceStore(tmp_path).write(
+            cases=cases,
+            runs=(valid_run, invalid_run, valid_run),
+            manifest=_manifest(),
+            variant="jakepilot",
+        )
+
+    assert list(tmp_path.iterdir()) == []

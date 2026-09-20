@@ -42,6 +42,9 @@ class FormalEvidenceStore:
             )
 
         expected_case_ids = {case.case_id for case in cases}
+        expected_categories = {
+            case.case_id: case.category for case in cases
+        }
         for index, run in enumerate(runs, start=1):
             if run.dataset_version != manifest.dataset_version:
                 raise ValueError(f"run {index} dataset version does not match manifest")
@@ -55,6 +58,10 @@ class FormalEvidenceStore:
             if set(run_case_ids) != expected_case_ids:
                 raise ValueError(f"run {index} case ids do not match dataset")
             for case_run in run.case_runs:
+                if case_run.category != expected_categories[case_run.case_id]:
+                    raise ValueError(
+                        f"run {index} case category does not match dataset"
+                    )
                 if case_run.observation.case_id != case_run.case_id:
                     raise ValueError(f"run {index} observation case id mismatch")
                 if case_run.result.case_id != case_run.case_id:

@@ -125,6 +125,34 @@ def test_multidomain_runner_rejects_runner_that_drops_a_case():
         raise AssertionError("partial runner output must fail closed")
 
 
+def test_multidomain_runner_rejects_mislabeled_category_result():
+    class MislabeledRunner(FakeCategoryRunner):
+        def run(self, cases: tuple[EvalCase, ...]) -> SuiteRun:
+            suite = super().run(cases)
+            item = suite.case_runs[0]
+            mislabeled = CaseRun(
+                case_id=item.case_id,
+                category="order_logistics",
+                observation=item.observation,
+                result=item.result,
+            )
+            return SuiteRun(
+                dataset_version=suite.dataset_version,
+                dataset_digest=suite.dataset_digest,
+                case_runs=(mislabeled,),
+                summary=suite.summary,
+            )
+
+    cases = (_case("knowledge-1", "knowledge"),)
+
+    try:
+        MultiDomainEvalRunner({"knowledge": MislabeledRunner()}).run(cases)
+    except ValueError as exc:
+        assert str(exc) == "runner result mismatch for category knowledge"
+    else:
+        raise AssertionError("mislabeled runner output must fail closed")
+
+
 def test_multidomain_runner_rejects_empty_or_duplicate_case_ids():
     runner = MultiDomainEvalRunner({"knowledge": FakeCategoryRunner()})
 
