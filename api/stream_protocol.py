@@ -18,6 +18,16 @@ _PUBLIC_RUNTIME_FIELDS = {
     ),
     "confirmation_required": frozenset({"tool", "summary"}),
     "input_required": frozenset({"field", "summary"}),
+    "knowledge_retrieval": frozenset(
+        {
+            "mode",
+            "pipeline_status",
+            "evidence_sufficiency",
+            "citation_count",
+            "terminal_reason",
+            "fallback",
+        }
+    ),
 }
 
 

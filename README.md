@@ -5,7 +5,7 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 ## 当前已实现
 
 - 中心任务分类 Agent，将请求路由到知识咨询、订单售后或上门服务预约 Agent。
-- 基于 Ollama `bge-m3`、FAISS 与电商售后种子知识的流式咨询链路。
+- 将独立 HermesRAG 封装为 Knowledge Tool，统一映射回答、引用、RAG 模式、证据充分性与终止状态；服务不可用时自动降级到基于 Ollama `bge-m3` 和 FAISS 的本地知识链路。
 - 统一 Turn、Outcome 与 Trace 契约，以及最多 6 步、8 次工具调用、2 次重规划的有界执行循环。
 - `order.get`、`logistics.get`、`return.check`、`return.create` 四个 Schema 工具，使用匿名 SQLite 演示数据完成订单查询、物流追踪和退货办理。
 - 写操作二次确认、参数冻结、Action Ledger 幂等保护，以及按会话隔离的待确认操作。
@@ -16,7 +16,6 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 
 ## 规划中
 
-- HermesRAG 适配器，包括答案、引用、证据充分性和管理员 Trace。
 - Working、Episodic、Profile 三层记忆与 Context Engine。
 - Checkpoint、异常恢复及轨迹级评测。
 - 面向预约槽位抽取与下一动作选择的本地小模型后训练。
@@ -32,7 +31,8 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 SSE 安全适配层
    ↓
 Task Classification Agent
-   ├─ Consultation Agent → FAISS → 流式知识回答
+   ├─ Consultation Agent → HermesRAG Knowledge Tool → 回答 / 引用 / 证据状态
+   │                         └─ 不可用时回退本地 FAISS
    ├─ Order After-sales Agent → 有界 Loop → 订单/物流/退货工具
    └─ Appointment Agent       → 槽位补全 → 可用性检查 → 预约写入
 ```
@@ -56,9 +56,23 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8001
 
 旧 Agent 运行仍需要在 `.env` 中配置可用的 LLM 和 Embedding Provider。不要提交真实密钥。
 
+### 可选：接入本地 HermesRAG
+
+先在 `D:\superhermes agentic` 按主项目 README 启动依赖和端口 `8000` 的 HermesRAG 服务，再在 JakePilot 的本地 `.env` 增加：
+
+```dotenv
+HERMESRAG_ENABLED=true
+HERMESRAG_BASE_URL=http://127.0.0.1:8000
+HERMESRAG_USERNAME=你的本地账号
+HERMESRAG_PASSWORD=你的本地密码
+HERMESRAG_TIMEOUT_SECONDS=45
+```
+
+JakePilot 通过 `/auth/login` 获取短期 Token，再调用非流式 `/chat`；凭据、原始 Trace 和检索片段全文不会发送到浏览器。若未启用、认证失败或服务不可达，知识咨询会显示降级状态并继续使用本地 FAISS，不影响订单售后与预约链路。
+
 ## 演示问题
 
-- `耳机保修期多久？`
+- `耳机保修期多久？`（HermesRAG 开启时，时间线展示模式、证据状态和引用数）
 - `帮我查询订单 JP20260919001 的物流`
 - `申请退货 JP20260919002，原因是商品破损`，随后回复 `确认提交`
 - `预约周六上午上门安装空调`

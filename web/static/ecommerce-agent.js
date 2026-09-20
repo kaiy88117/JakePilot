@@ -97,6 +97,27 @@
         if (event === "input_required") {
             return { title: "等待补充信息", detail: payload.summary || "请补充任务信息" };
         }
+        if (event === "knowledge_retrieval") {
+            if (payload.fallback) {
+                return { title: "知识服务降级", detail: "已切换本地知识库" };
+            }
+            const modeLabels = {
+                agentic: "Agentic RAG",
+                auto: "Auto RAG",
+                standard: "标准 RAG",
+                self_corrective: "自纠正 RAG"
+            };
+            const evidenceLabels = {
+                sufficient: "证据充分",
+                partial: "部分证据",
+                insufficient: "证据不足",
+                not_evaluated: "未执行证据评分"
+            };
+            const mode = modeLabels[payload.mode] || "知识检索";
+            const evidence = evidenceLabels[payload.evidence_sufficiency] || "状态未知";
+            const count = Number.isInteger(payload.citation_count) ? payload.citation_count : 0;
+            return { title: "完成知识检索", detail: `${mode} · ${evidence} · ${count} 条引用` };
+        }
         return null;
     }
 
@@ -176,7 +197,7 @@
         } else if (event === "route_selected") {
             currentRoute.textContent = payload.label;
             appendTimeline("完成任务路由", payload.label);
-        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required") {
+        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required" || event === "knowledge_retrieval") {
             const description = describeRuntimeEvent(event, payload);
             if (description) appendTimeline(description.title, description.detail);
         } else if (event === "answer_delta") {

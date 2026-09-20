@@ -203,3 +203,37 @@ process.stdout.write(JSON.stringify({{ started, finished, confirmation, inputReq
         "confirmation": {"title": "等待用户确认", "detail": "为订单提交退货申请"},
         "inputRequired": {"title": "等待补充信息", "detail": "请补充退货原因"},
     }
+
+
+def test_frontend_describes_hermesrag_evidence_and_local_fallback():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ describeRuntimeEvent }} = require({json.dumps(str(script_path))});
+const grounded = describeRuntimeEvent('knowledge_retrieval', {{
+  mode: 'agentic', pipeline_status: 'ready', evidence_sufficiency: 'sufficient',
+  citation_count: 2, fallback: false
+}});
+const fallback = describeRuntimeEvent('knowledge_retrieval', {{
+  mode: 'local', pipeline_status: 'degraded', evidence_sufficiency: 'not_evaluated',
+  citation_count: 0, fallback: true
+}});
+process.stdout.write(JSON.stringify({{ grounded, fallback }}));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert json.loads(result.stdout) == {
+        "grounded": {
+            "title": "完成知识检索",
+            "detail": "Agentic RAG · 证据充分 · 2 条引用",
+        },
+        "fallback": {
+            "title": "知识服务降级",
+            "detail": "已切换本地知识库",
+        },
+    }

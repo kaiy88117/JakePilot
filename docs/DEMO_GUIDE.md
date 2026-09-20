@@ -27,6 +27,28 @@ ollama list
 
 API Key 只放在本地 `.env` 或系统环境变量中，不要提交到 Git。
 
+### 可选：启用 HermesRAG Knowledge Tool
+
+如需演示两个项目的完整联动，先打开另一个 PowerShell：
+
+```powershell
+Set-Location 'D:\superhermes agentic'
+docker compose up -d
+uv run uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+确认已在 HermesRAG 注册可登录的本地账号，然后在 `JakePilot\.env` 中增加：
+
+```dotenv
+HERMESRAG_ENABLED=true
+HERMESRAG_BASE_URL=http://127.0.0.1:8000
+HERMESRAG_USERNAME=你的本地账号
+HERMESRAG_PASSWORD=你的本地密码
+HERMESRAG_TIMEOUT_SECONDS=45
+```
+
+不要把真实账号、密码或 Bearer Token 提交到 Git。若暂时只演示 JakePilot，将 `HERMESRAG_ENABLED=false` 即可继续使用本地 FAISS。
+
 ## 2. 每次演示前重置
 
 先在运行服务的终端按 `Ctrl+C`，再执行：
@@ -60,7 +82,13 @@ API Key 只放在本地 `.env` 或系统环境变量中，不要提交到 Git。
 耳机保修期多久？
 ```
 
-讲解重点：中心分类 Agent 将通用政策问题交给知识咨询 Agent，知识链路使用本地 `bge-m3` Embedding 和 FAISS 检索。
+预期时间线（启用 HermesRAG 时）：
+
+```text
+知识咨询 Agent → 完成知识检索 → Agentic/标准模式 → 证据状态与引用数量
+```
+
+讲解重点：中心分类 Agent 将通用政策问题交给知识咨询 Agent；Knowledge Tool 只依赖稳定 HTTP 契约，不复制 HermesRAG 的 Milvus 与检索实现。HermesRAG 返回答案、引用和证据状态；服务不可用时前端明确显示降级，并切换本地 `bge-m3` + FAISS 链路。
 
 ### 场景二：物流查询
 
@@ -128,7 +156,7 @@ API Key 只放在本地 `.env` 或系统环境变量中，不要提交到 Git。
 
 ## 5. 面试时的 30 秒讲法
 
-> 这是一个中心路由式电商售后 Agent。通用政策进入知识咨询 Agent，具体订单、物流和退货操作进入订单售后 Agent，上门安装进入预约 Agent。订单售后链路使用统一的有界 Agent Runtime，所有工具都经过 Schema 校验；退货写操作还增加了参数冻结、用户二次确认和幂等 Action Ledger。前端通过安全 SSE 只展示路由和工具阶段，不暴露模型思维链、订单参数或内部异常。
+> 这是一个中心路由式电商售后 Agent。通用政策通过 Knowledge Tool 调用独立 HermesRAG，并回传引用和证据状态；具体订单、物流和退货操作进入订单售后 Agent，上门安装进入预约 Agent。订单售后链路使用有界 Runtime，所有工具经过 Schema 校验，退货写操作还有参数冻结、二次确认和幂等 Action Ledger。前端通过安全 SSE 展示路由、工具和证据阶段，不暴露思维链、凭据、订单参数或内部异常。
 
 ## 6. 演示结束
 

@@ -282,3 +282,29 @@ def test_missing_slot_event_marks_the_turn_as_needing_input():
         "summary": "请补充退货原因",
     }
     assert events[-1][1]["status"] == "needs_input"
+
+
+def test_knowledge_event_exposes_only_safe_evidence_summary():
+    events = _collect(
+        _tokens(
+            '[EVENT]{"type":"knowledge_retrieval","data":{"mode":"agentic","pipeline_status":"ready","evidence_sufficiency":"sufficient","citation_count":2,"terminal_reason":"answer_ready","fallback":false,"bearer_token":"PRIVATE_TOKEN","raw_trace":{"prompt":"PRIVATE_PROMPT"}}}',
+            "[REPLY][咨询机器人]有证据的回答",
+        ),
+        "turn-knowledge",
+    )
+
+    knowledge = next(
+        payload for name, payload in events if name == "knowledge_retrieval"
+    )
+    assert knowledge == {
+        "turn_id": "turn-knowledge",
+        "mode": "agentic",
+        "pipeline_status": "ready",
+        "evidence_sufficiency": "sufficient",
+        "citation_count": 2,
+        "terminal_reason": "answer_ready",
+        "fallback": False,
+    }
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert "PRIVATE_TOKEN" not in serialized
+    assert "PRIVATE_PROMPT" not in serialized
