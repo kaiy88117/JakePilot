@@ -1,19 +1,28 @@
 import asyncio
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 from agents.appointment.appointment_processor import AppointmentProcessor
+from agents.appointment.appointment_database import AppointmentDatabase
 from agents.appointment.input_parser import InputParser
 from agents.appointment.message_builder import MessageBuilder
 from agents.consultant.prompt_builder import PromptBuilder
+from agents.user_behavior.pattern_analyzer import PatternAnalyzer
+from agents.user_behavior_agent import UserBehaviorAgent
 from agents.task_classification.agent_router import AgentRouter
 from agents.task_classification.state_manager import StateManager
 from agents.task_classification.task_classifier import TaskClassifier
 from agents.task_classification.unrelated_handler import UnrelatedHandler
 from services import knowledge_service as knowledge_module
 from services import technician_service as technician_module
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_router_prompt_describes_ecommerce_after_sales_without_legacy_domain():
@@ -185,3 +194,55 @@ def test_knowledge_initialization_replaces_only_builtin_legacy_seed(monkeypatch)
     assert "用户自己上传的商品说明。" in active_contents
     assert any("七日无理由" in content for content in active_contents)
     assert all("按摩" not in content and "推拿" not in content for content in active_contents)
+
+
+def test_public_knowledge_page_uses_ecommerce_copy_only():
+    source = (ROOT / "web" / "templates" / "knowledge_management.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert "电商售后知识库" in source
+    assert "订单物流" in source
+    assert "推拿" not in source
+    assert "按摩" not in source
+    assert "技师" not in source
+
+
+def test_user_return_visit_fallbacks_stay_in_ecommerce_domain():
+    analyzer = PatternAnalyzer.__new__(PatternAnalyzer)
+    analyzer.logger = logging.getLogger(__name__)
+    analyzer.analyze_user_preferences = lambda _user_id: None
+
+    agent = UserBehaviorAgent.__new__(UserBehaviorAgent)
+    agent.logger = logging.getLogger(__name__)
+    agent.get_user_analysis = lambda _user_id: None
+
+    replies = [
+        analyzer.generate_return_message("u-1"),
+        asyncio.run(agent.generate_personalized_reminder("u-1")),
+    ]
+
+    assert all("售后" in reply for reply in replies)
+    assert all("按摩" not in reply and "推拿" not in reply for reply in replies)
+
+
+def test_appointment_behavior_record_uses_ecommerce_default_service():
+    recorded = {}
+
+    class Recorder:
+        def record_behavior(self, **kwargs):
+            recorded.update(kwargs)
+
+    database = AppointmentDatabase()
+    database._user_behavior_service = Recorder()
+    start = datetime(2026, 9, 20, 10, 0)
+
+    database._record_user_behavior(
+        start,
+        start + timedelta(minutes=60),
+        "engineer-1",
+        {},
+        "session-1",
+    )
+
+    assert recorded["action_data"]["project"] == "上门售后服务"

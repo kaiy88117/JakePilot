@@ -73,7 +73,7 @@ class AppointmentDatabase:
                 'start_time': time_config.format_datetime(start_time, "%Y-%m-%d %H:%M:%S"),
                 'end_time': time_config.format_datetime(end_time, "%Y-%m-%d %H:%M:%S"),
                 'duration': int((end_time - start_time).total_seconds() / 60),
-                'project': appointment_history.get('project', 'massage'),
+                'project': appointment_history.get('project', '上门售后服务'),
                 'preference': appointment_history.get('preference', ''),
                 'technician_id': technician_id
             }

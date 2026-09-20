@@ -119,11 +119,11 @@ class PatternAnalyzer:
         try:
             preferences = self.analyze_user_preferences(user_id)
             if not preferences:
-                return "您好！好久没见了，要不要预约一个按摩放松一下？"
+                return "您好！近期有需要查询订单、办理退换货或预约上门售后服务吗？"
             
             # 获取技师信息
             tech_id = preferences.get('favorite_technician_id')
-            service = preferences.get('favorite_service', '按摩')
+            service = preferences.get('favorite_service', '上门安装')
             duration = preferences.get('favorite_duration', 60)
             
             # 构建个性化消息
@@ -131,19 +131,19 @@ class PatternAnalyzer:
                 from db import TechnicianDBRouter
                 db = TechnicianDBRouter()
                 tech_info = db.get_technician_by_id(tech_id)
-                tech_name = tech_info.get('name', '您偏爱的技师') if tech_info else '您偏爱的技师'
+                tech_name = tech_info.get('name', '您之前选择的服务工程师') if tech_info else '您之前选择的服务工程师'
                 
-                message = f"您好！{tech_name}最近有空档，您之前很喜欢他/她的{service}服务。"
+                message = f"您好！{tech_name}近期有可预约时段，您之前选择过{service}服务。"
                 if duration:
                     message += f"按照您习惯的{duration}分钟，"
-                message += "要不要预约一下放松一下？"
+                message += "需要帮您预约上门售后服务吗？"
             else:
-                message = f"您好！好久没见了，要不要预约一个{service}服务放松一下？"
+                message = f"您好！近期有需要再次预约{service}售后服务吗？"
                 if duration:
-                    message += f"按您习惯的{duration}分钟怎么样？"
+                    message += f"可以按您习惯的{duration}分钟服务时长安排。"
             
             return message
             
         except Exception as e:
             self.logger.error(f"生成回访消息失败: {str(e)}")
-            return "您好！好久没见了，要不要预约一个按摩放松一下？"
+            return "您好！近期有需要查询订单、办理退换货或预约上门售后服务吗？"

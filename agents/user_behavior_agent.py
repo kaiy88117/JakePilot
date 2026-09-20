@@ -132,7 +132,7 @@ class UserBehaviorAgent:
             analysis = self.get_user_analysis(user_id)
             if not analysis or not analysis.get('favorite_technician_id'):
                 self.logger.info("没有找到用户偏好数据，使用默认消息")
-                return "尊敬的Tom，您好！好久没见了，要不要预约一个按摩放松一下？"
+                return "您好！近期有需要查询订单、办理退换货或预约上门售后服务吗？"
             
             self.logger.info(f"用户分析数据: {analysis}")
             
@@ -141,9 +141,9 @@ class UserBehaviorAgent:
             tech_db = TechnicianDBRouter()
             tech_info = tech_db.get_technician_by_id(analysis['favorite_technician_id'])
             
-            tech_name = tech_info.get('name', '您偏爱的技师') if tech_info else '您偏爱的技师'
+            tech_name = tech_info.get('name', '您之前选择的服务工程师') if tech_info else '您之前选择的服务工程师'
             tech_strength = tech_info.get('strength', '') if tech_info else ''
-            service = analysis.get('favorite_service', '按摩')
+            service = analysis.get('favorite_service', '上门安装')
             duration = analysis.get('favorite_duration', 60)
             
             self.logger.info(f"技师信息: {tech_name}, 特长: {tech_strength}")
@@ -153,22 +153,22 @@ class UserBehaviorAgent:
             self.logger.info(f"格式化后的时间: {times_text}")
             
             # 构建LLM提示
-            prompt = f"""请为健康理疗店生成一条温暖的回访消息。
+            prompt = f"""请为电商售后服务生成一条简洁、专业的回访消息。
 
 客户信息：
-- 称呼：尊敬的Tom
-- 最喜欢的理疗师：{tech_name}
-- 理疗师特长：{tech_strength}
-- 常用服务：{service.replace('按摩', '理疗')}
+- 称呼：您好
+- 之前选择的服务工程师：{tech_name}
+- 工程师技能：{tech_strength}
+- 常用服务：{service}
 - 常用时长：{duration}分钟
-- 理疗师空闲时间：{times_text}
+- 工程师可预约时间：{times_text}
 
 要求：
-1. 语气亲切温暖，像老朋友一样
-2. 提到理疗师的名字和特长
-3. 结合客户的使用习惯
+1. 语气亲切、专业，不过度营销
+2. 只使用上述已知信息，不编造订单或售后状态
+3. 结合客户之前的服务偏好
 4. 如果有空闲时间，自然地提及具体时间
-5. 最后邀请客户预约
+5. 最后询问是否需要售后帮助或预约上门服务
 6. 控制在80字以内
 7. 直接输出消息内容，不要任何标记"""
             
