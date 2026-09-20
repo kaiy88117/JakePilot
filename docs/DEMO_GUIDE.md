@@ -199,6 +199,17 @@ Set-Location 'D:\superhermes agentic\JakePilot'
 因此管理员页只能展示 Smoke 报告。只有未来报告同时携带完整门禁证据时，页面才会标记为
 “正式 Golden Set”。
 
+当 Baseline 与 JakePilot 的正式报告都已生成后，可运行以下发布门禁。命令会校验两份
+报告是否来自同一数据集和工具桩，检查 3 次重复、固定版本、核心质量/安全阈值，以及
+任务成功率、工具选择率等指标是否出现超过 2 个百分点的回退：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.check_agent_eval_release --baseline D:\eval\baseline.json --candidate D:\eval\jakepilot.json
+```
+
+当前没有正式报告时不得运行该命令生成简历结论；缺文件、非法 JSON、证据不完整、阈值
+不达标或数据集不一致都会返回非零退出码。
+
 运行观测页仅允许本机访问，且只展示脱敏生命周期，不包含用户原文、回答正文、工具参数或隐藏推理。它是面试演示入口，不代表生产 JWT/RBAC 已完成。
 
 ## 5. 面试时的 30 秒讲法

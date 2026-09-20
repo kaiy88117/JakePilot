@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from evaluation.formal_gate import FORMAL_CATEGORY_TARGETS
+from evaluation.release_gate import formal_report_errors
 
 
 _METRIC_LABELS = {
@@ -122,36 +122,7 @@ class ObservabilityService:
                 raise ValueError("smoke report cannot claim formal status")
             gate_label = "开发 Smoke 门禁"
         elif suite_kind == "golden":
-            formal_gate = payload.get("formal_gate") or {}
-            run_config = payload.get("run_config") or {}
-            gate_counts = formal_gate.get("category_counts") or {}
-            unpinned_values = {"", "unknown", "not_pinned", "not_applicable"}
-            if (
-                formal_benchmark is not True
-                or repeat_count != 3
-                or int(payload.get("case_count", 0)) < 200
-                or formal_gate.get("eligible") is not True
-                or formal_gate.get("errors") != []
-                or int(formal_gate.get("case_count", 0))
-                != int(payload.get("case_count", 0))
-                or formal_gate.get("dataset_digest") != dataset_digest
-                or any(
-                    int(gate_counts.get(category, 0)) < target
-                    for category, target in FORMAL_CATEGORY_TARGETS.items()
-                )
-                or len(dataset_digest) != 64
-                or any(char not in "0123456789abcdef" for char in dataset_digest)
-                or str(payload.get("code_revision") or "").lower()
-                in unpinned_values
-                or any(
-                    str(run_config.get(name) or "").lower() in unpinned_values
-                    for name in (
-                        "model_version",
-                        "prompt_version",
-                        "tool_fixture_version",
-                    )
-                )
-            ):
+            if formal_report_errors(payload):
                 raise ValueError("formal report failed evidence checks")
             gate_label = "正式 Golden Set"
         else:
