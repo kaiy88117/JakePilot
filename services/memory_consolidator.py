@@ -27,6 +27,18 @@ TurnRoute = Literal[
 ]
 
 
+class VerifiedMemoryFact(BaseModel):
+    """Minimal server-side fact emitted only after a verified business write."""
+
+    model_config = ConfigDict(frozen=True)
+
+    event_type: str = Field(min_length=1, max_length=64)
+    candidate_key: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=240)
+    outcome: str = Field(min_length=1, max_length=32)
+    entity_refs: tuple[str, ...] = Field(default=(), max_length=8)
+
+
 class TurnCompletion(BaseModel):
     """Privacy-bounded terminal projection consumed by consolidation."""
 
@@ -40,6 +52,9 @@ class TurnCompletion(BaseModel):
     route: TurnRoute
     user_message: str = Field(max_length=2000)
     public_result: str = Field(max_length=2000)
+    verified_facts: tuple[VerifiedMemoryFact, ...] = Field(
+        default=(), max_length=8
+    )
 
 
 class MemoryCandidate(BaseModel):
@@ -105,13 +120,40 @@ _APPOINTMENT_REFERENCE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _HANDOFF_REFERENCE_PATTERN = re.compile(r"工单号\s*(HO-[A-Za-z0-9-]{2,64})")
-_STABLE_PREFERENCE_PATTERN = re.compile(r"(?:以后都?|今后|之后都)")
+_STABLE_PREFERENCE_PREFIX = re.compile(r"^\s*(?:以后|今后|之后)(?:都|请)?")
+_PREFERENCE_CLAUSE_SPLIT = re.compile(r"[，,。；;！？!?]+")
+_NEGATION_MARKERS = ("不要", "不再", "别", "避免")
 _TIME_PREFERENCE_VALUES = {
     "上午": "morning",
     "下午": "afternoon",
     "晚上": "evening",
     "周末": "weekend",
 }
+_LANGUAGE_PREFERENCE_VALUES = {
+    "用英文": "en",
+    "用中文": "zh",
+}
+
+
+def _positive_preference_value(
+    message: str, values: dict[str, str]
+) -> str | None:
+    """Return one unambiguous positive value under a stable-pref scope."""
+    if _STABLE_PREFERENCE_PREFIX.match(message) is None:
+        return None
+    selected: set[str] = set()
+    for clause in _PREFERENCE_CLAUSE_SPLIT.split(message):
+        for expression, normalized in values.items():
+            index = clause.find(expression)
+            if index < 0:
+                continue
+            prefix = clause[:index]
+            if any(marker in prefix for marker in _NEGATION_MARKERS):
+                continue
+            selected.add(normalized)
+    if len(selected) != 1:
+        return None
+    return selected.pop()
 
 
 class RuleBasedMemoryCandidateExtractor:
@@ -122,9 +164,22 @@ class RuleBasedMemoryCandidateExtractor:
             return ()
 
         candidates: list[MemoryCandidate] = []
-        episodic = self._episodic_candidate(completion)
-        if episodic is not None:
-            candidates.append(episodic)
+        if completion.verified_facts:
+            candidates.extend(
+                MemoryCandidate(
+                    kind="episodic",
+                    candidate_key=fact.candidate_key,
+                    event_type=fact.event_type,
+                    summary=fact.summary,
+                    outcome=fact.outcome,
+                    entity_refs=fact.entity_refs,
+                )
+                for fact in completion.verified_facts
+            )
+        else:
+            episodic = self._episodic_candidate(completion)
+            if episodic is not None:
+                candidates.append(episodic)
         profile = self._profile_candidate(completion)
         if profile is not None:
             candidates.append(profile)
@@ -195,35 +250,31 @@ class RuleBasedMemoryCandidateExtractor:
     ) -> MemoryCandidate | None:
         if (
             completion.status != "completed"
-            or not _STABLE_PREFERENCE_PATTERN.search(completion.user_message)
+            or _STABLE_PREFERENCE_PREFIX.match(completion.user_message) is None
         ):
             return None
         if completion.route == "service_appointment":
-            for expression, normalized in _TIME_PREFERENCE_VALUES.items():
-                if expression in completion.user_message:
-                    return MemoryCandidate(
-                        kind="profile",
-                        candidate_key="profile:service_time_preference",
-                        memory_key="service_time_preference",
-                        memory_value=normalized,
-                        source_type="explicit",
-                        confidence=1.0,
-                    )
-        if "用英文" in completion.user_message:
-            return MemoryCandidate(
-                kind="profile",
-                candidate_key="profile:communication_language",
-                memory_key="communication_language",
-                memory_value="en",
-                source_type="explicit",
-                confidence=1.0,
+            time_value = _positive_preference_value(
+                completion.user_message, _TIME_PREFERENCE_VALUES
             )
-        if "用中文" in completion.user_message:
+            if time_value is not None:
+                return MemoryCandidate(
+                    kind="profile",
+                    candidate_key="profile:service_time_preference",
+                    memory_key="service_time_preference",
+                    memory_value=time_value,
+                    source_type="explicit",
+                    confidence=1.0,
+                )
+        language_value = _positive_preference_value(
+            completion.user_message, _LANGUAGE_PREFERENCE_VALUES
+        )
+        if language_value is not None:
             return MemoryCandidate(
                 kind="profile",
                 candidate_key="profile:communication_language",
                 memory_key="communication_language",
-                memory_value="zh",
+                memory_value=language_value,
                 source_type="explicit",
                 confidence=1.0,
             )
@@ -244,6 +295,7 @@ _ALLOWED_EVENT_TYPES = {
     "service_booked",
     "handoff_created",
 }
+_ALLOWED_OUTCOMES = {"completed", "handed_off"}
 _ALLOWED_PROFILE_KEYS = {
     "service_time_preference",
     "communication_language",
@@ -280,7 +332,17 @@ class MemoryConsolidator:
         skipped = 0
         rejected = 0
         memories: list[dict] = []
-        for candidate in self.extractor.extract(completion):
+        candidates = self.extractor.extract(completion)
+        if self._values_contain_sensitive(
+            (completion.user_message, completion.public_result)
+        ):
+            return ConsolidationResult(
+                written=0,
+                skipped=0,
+                rejected=len(candidates),
+                memories=(),
+            )
+        for candidate in candidates:
             if not self._candidate_is_safe(candidate):
                 rejected += 1
                 continue
@@ -303,29 +365,22 @@ class MemoryConsolidator:
                     skipped += 1
                 continue
 
-            current = self.memory_manager.recall_profiles(
-                completion.tenant_id,
-                completion.user_id,
-                keys=[candidate.memory_key or ""],
-                limit=1,
-            )
-            if current and (
-                current[0]["source_trace_id"] == completion.turn_id
-                and current[0]["memory_value"] == candidate.memory_value
-            ):
-                skipped += 1
-                continue
-            memory = self.memory_manager.set_profile(
+            memory = self.memory_manager.set_profile_once(
                 tenant_id=completion.tenant_id,
                 user_id=completion.user_id,
                 memory_key=candidate.memory_key or "",
                 memory_value=candidate.memory_value,
+                candidate_key=candidate.candidate_key,
                 source_type="explicit",
                 confidence=1.0,
                 source_trace_id=completion.turn_id,
             )
-            written += 1
-            memories.append(memory)
+            created = bool(memory.pop("created", False))
+            if created:
+                written += 1
+                memories.append(memory)
+            else:
+                skipped += 1
 
         return ConsolidationResult(
             written=written,
@@ -337,9 +392,16 @@ class MemoryConsolidator:
     @staticmethod
     def _candidate_is_safe(candidate: MemoryCandidate) -> bool:
         if candidate.kind == "episodic":
-            if candidate.event_type not in _ALLOWED_EVENT_TYPES:
+            if (
+                candidate.event_type not in _ALLOWED_EVENT_TYPES
+                or candidate.outcome not in _ALLOWED_OUTCOMES
+            ):
                 return False
-            values = [candidate.summary or "", *candidate.entity_refs]
+            values = [
+                candidate.summary or "",
+                candidate.outcome or "",
+                *candidate.entity_refs,
+            ]
         else:
             if (
                 candidate.memory_key not in _ALLOWED_PROFILE_KEYS
@@ -348,7 +410,11 @@ class MemoryConsolidator:
             ):
                 return False
             values = [str(candidate.memory_value or "")]
-        return not any(
+        return not MemoryConsolidator._values_contain_sensitive(values)
+
+    @staticmethod
+    def _values_contain_sensitive(values) -> bool:
+        return any(
             pattern.search(value)
             for value in values
             for pattern in _SENSITIVE_PATTERNS

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -87,6 +88,55 @@ def test_service_appointment_copy_uses_engineer_language():
         {"name": "张伟", "gender": "男"}
     )
     assert "按摩" not in builder.create_unrelated_message()
+
+
+def test_successful_appointment_emits_private_verified_memory_fact():
+    class Finder:
+        def find_technician_with_thought(self, history, yield_func):
+            return {"id": 7, "name": "张伟", "gender": "男"}
+
+        def parse_time_and_duration(self, start_time, duration):
+            start = datetime(2026, 9, 20, 10, 0)
+            return start, start + timedelta(hours=1), 60
+
+    class Database:
+        def save_appointment(self, *args, **kwargs):
+            return "APT-001"
+
+        def update_memory_schedule(self, *args, **kwargs):
+            return None
+
+    processor = AppointmentProcessor(
+        input_parser=None,
+        technician_finder=Finder(),
+        message_builder=MessageBuilder(),
+        appointment_database=Database(),
+        llm=None,
+    )
+
+    async def collect():
+        return [
+            token
+            async for token in processor.handle_complete_appointment(
+                {
+                    "start_time": "2026-09-20 10:00",
+                    "duration": "60分钟",
+                    "project": "空调安装",
+                },
+                "session-a",
+            )
+        ]
+
+    tokens = asyncio.run(collect())
+    event = next(
+        json.loads(token.removeprefix("[EVENT]"))
+        for token in tokens
+        if token.startswith("[EVENT]")
+    )
+
+    assert event["type"] == "memory_fact"
+    assert event["data"]["event_type"] == "service_booked"
+    assert event["data"]["entity_refs"] == ["APT-001"]
 
 
 def test_appointment_parser_and_unrelated_replies_have_no_legacy_domain():

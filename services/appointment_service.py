@@ -24,7 +24,7 @@ class AppointmentService:
     
     def save_appointment(self, technician_id: str, start_time: datetime, 
                         end_time: datetime, appointment_history: Dict[str, Any], 
-                        session_id: str) -> bool:
+                        session_id: str) -> int | None:
         """保存预约信息到数据库"""
         try:
             appointment_id = int(time.time() * 1000)
@@ -39,11 +39,11 @@ class AppointmentService:
             )
             
             logger.info(f"预约信息已保存到数据库：技师ID={technician_id}, 时间={start_time} 到 {end_time}, 预约ID={appointment_id}")
-            return True
+            return appointment_id
             
         except Exception as e:
             logger.error(f"保存预约信息到数据库失败：{e}")
-            return False
+            return None
     
     def get_technician_by_id(self, technician_id: int) -> Optional[Dict[str, Any]]:
         """根据ID获取技师信息"""

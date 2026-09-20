@@ -63,7 +63,9 @@ class ClassificationProcessor:
                     task.strip() in {"确认", "确认提交"}
                     and self.agent_router.order_after_sales_agent
                 ):
-                    async for token in self.agent_router.route_to_order_after_sales(task):
+                    async for token in self.agent_router.route_to_order_after_sales(
+                        task, turn_id=turn_id
+                    ):
                         yield token
                     return
                 # 进行任务分类
@@ -80,7 +82,9 @@ class ClassificationProcessor:
                     category == "order_after_sales"
                     and self.agent_router.order_after_sales_agent
                 ):
-                    async for token in self.agent_router.route_to_order_after_sales(task):
+                    async for token in self.agent_router.route_to_order_after_sales(
+                        task, turn_id=turn_id
+                    ):
                         yield token
                 else:
                     # 不支持的任务类型
@@ -88,7 +92,9 @@ class ClassificationProcessor:
                         yield token
             else:
                 # 根据当前状态继续处理
-                async for token in self.agent_router.route_by_state(task):
+                async for token in self.agent_router.route_by_state(
+                    task, turn_id=turn_id
+                ):
                     yield token
                     
         except Exception as e:
@@ -123,7 +129,9 @@ class ClassificationProcessor:
                     and self.agent_router.order_after_sales_agent
                 ):
                     result = ""
-                    async for token in self.agent_router.route_to_order_after_sales(task):
+                    async for token in self.agent_router.route_to_order_after_sales(
+                        task, turn_id=turn_id
+                    ):
                         result += token
                     return result
                 category = await self.task_classifier.classify_task(task)
@@ -140,7 +148,9 @@ class ClassificationProcessor:
                     and self.agent_router.order_after_sales_agent
                 ):
                     result = ""
-                    async for token in self.agent_router.route_to_order_after_sales(task):
+                    async for token in self.agent_router.route_to_order_after_sales(
+                        task, turn_id=turn_id
+                    ):
                         result += token
                     return result
                 else:
@@ -157,7 +167,9 @@ class ClassificationProcessor:
                         return await agent.consult(task)
                 elif self.state_manager.is_in_order_after_sales_flow():
                     result = ""
-                    async for token in self.agent_router.route_to_order_after_sales(task):
+                    async for token in self.agent_router.route_to_order_after_sales(
+                        task, turn_id=turn_id
+                    ):
                         result += token
                     return result
                 

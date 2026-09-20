@@ -196,7 +196,11 @@ class AppointmentProcessor:
             # 标记为推荐技师用于成功消息显示
             tech['is_recommendation'] = True
             tech['original_technician'] = appointment_history.get('original_technician')
-            reply = await self._process_successful_appointment(tech, appointment_history, session_id)
+            reply, memory_fact = await self._process_successful_appointment(
+                tech, appointment_history, session_id
+            )
+            if memory_fact is not None:
+                yield memory_fact
             yield f"[REPLY][预约机器人]{reply}"
             # 清理状态
             appointment_history.pop('confirmed_technician', None)
@@ -245,40 +249,76 @@ class AppointmentProcessor:
                 return
             else:
                 # 正常预约流程
-                reply = await self._process_successful_appointment(tech, appointment_history, session_id)
+                reply, memory_fact = await self._process_successful_appointment(
+                    tech, appointment_history, session_id
+                )
+                if memory_fact is not None:
+                    yield memory_fact
                 yield f"[REPLY][预约机器人]{reply}"
         else:
             reply = self.message_builder.create_appointment_failure_message(technician_name)
             yield f"[REPLY][预约机器人]{reply}"
     
-    async def _process_successful_appointment(self, tech: Dict[str, Any], 
-                                           appointment_history: Dict[str, Any], session_id: str) -> str:
+    async def _process_successful_appointment(
+        self,
+        tech: Dict[str, Any],
+        appointment_history: Dict[str, Any],
+        session_id: str,
+    ) -> tuple[str, str | None]:
         """处理预约成功的情况，并结合北京天气生成温馨提示"""
         start_time, end_time, duration_min = self.technician_finder.parse_time_and_duration(
             appointment_history["start_time"], 
             appointment_history["duration"]
         )
         # 保存预约到数据库
-        success = self.appointment_database.save_appointment(
+        appointment_ref = self.appointment_database.save_appointment(
             tech["id"], start_time, end_time, appointment_history, session_id
         )
-        if success:
+        if appointment_ref:
             # 更新内存中的忙碌时段
             self.appointment_database.update_memory_schedule(tech["id"], start_time, end_time)
+            memory_fact = self._appointment_memory_fact_token(
+                str(appointment_ref)
+            )
             # 使用 LLM agent 生成结合北京天气的温馨提示
             if self.llm and hasattr(self, 'agent_executor'):
                 prompt = f"请获取北京今天的天气信息，并生成简短的上门服务提示。工程师姓名：{tech['name']}。不要承诺未确认的服务结果。"
                 try:
                     result = await self.agent_executor.ainvoke({"input": prompt})
                     agent_output = result.get("output", "")
-                    return f"\n机器人：已为您预约工程师：{tech['name']}。预约成功！\n{agent_output}\n"
+                    return (
+                        f"\n机器人：已为您预约工程师：{tech['name']}。预约成功！\n{agent_output}\n",
+                        memory_fact,
+                    )
                 except Exception as e:
                     print(f"Agent调用失败: {e}")
-                    return self.message_builder.create_appointment_success_message(tech)
+                    return (
+                        self.message_builder.create_appointment_success_message(tech),
+                        memory_fact,
+                    )
             else:
-                return self.message_builder.create_appointment_success_message(tech)
+                return (
+                    self.message_builder.create_appointment_success_message(tech),
+                    memory_fact,
+                )
         else:
-            return self.message_builder.create_save_failure_message()
+            return self.message_builder.create_save_failure_message(), None
+
+    @staticmethod
+    def _appointment_memory_fact_token(appointment_ref: str) -> str:
+        event = {
+            "type": "memory_fact",
+            "data": {
+                "event_type": "service_booked",
+                "candidate_key": f"appointment:{appointment_ref}",
+                "summary": f"已创建上门服务预约，预约编号 {appointment_ref}",
+                "outcome": "completed",
+                "entity_refs": [appointment_ref],
+            },
+        }
+        return "[EVENT]" + json.dumps(
+            event, ensure_ascii=False, separators=(",", ":")
+        )
     
     async def handle_incomplete_info(self, data: Dict[str, Any], appointment_history: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """处理信息不完整的情况"""

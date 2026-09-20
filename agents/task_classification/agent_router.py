@@ -117,7 +117,7 @@ class AgentRouter:
             self.state_manager.reset_to_classify()
 
     async def route_to_order_after_sales(
-        self, task: str
+        self, task: str, turn_id: str | None = None
     ) -> AsyncGenerator[str, None]:
         if not self.order_after_sales_agent:
             yield "[ERROR]订单售后服务暂时不可用"
@@ -126,7 +126,14 @@ class AgentRouter:
         self.state_manager.transition_to_order_after_sales()
         yield "[THOUGHT][归类机器人] 已识别为订单售后任务，转交订单售后 Agent 处理。"
         try:
-            async for token in self.order_after_sales_agent.run_stream(task):
+            token_stream = (
+                self.order_after_sales_agent.run_stream(task)
+                if turn_id is None
+                else self.order_after_sales_agent.run_stream(
+                    task, turn_id=turn_id
+                )
+            )
+            async for token in token_stream:
                 yield token
         except Exception:
             yield "[ERROR]订单售后处理失败，请稍后重试"
@@ -180,7 +187,9 @@ class AgentRouter:
         for char in reply:
             yield char
     
-    async def route_by_state(self, task: str) -> AsyncGenerator[str, None]:
+    async def route_by_state(
+        self, task: str, turn_id: str | None = None
+    ) -> AsyncGenerator[str, None]:
         """
         根据当前状态路由任务（用于状态持续的场景）
         
@@ -198,7 +207,14 @@ class AgentRouter:
                 async for token in agent.consult_stream(task):
                     yield token
         elif self.state_manager.is_in_order_after_sales_flow():
-            async for token in self.order_after_sales_agent.run_stream(task):
+            token_stream = (
+                self.order_after_sales_agent.run_stream(task)
+                if turn_id is None
+                else self.order_after_sales_agent.run_stream(
+                    task, turn_id=turn_id
+                )
+            )
+            async for token in token_stream:
                 yield token
             if not self._order_flow_active():
                 self.state_manager.reset_to_classify()

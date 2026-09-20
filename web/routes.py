@@ -15,13 +15,14 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
 
-from api.stream_protocol import iter_sse_events
+from api.stream_protocol import is_private_memory_fact_token, iter_sse_events
 from config.database import db_config
 from services.turn_journal import TurnJournal
 from services.observability_service import ObservabilityService
 from services.memory_consolidator import (
     MemoryConsolidationDispatcher,
     TurnCompletion,
+    VerifiedMemoryFact,
 )
 import logging
 
@@ -126,6 +127,12 @@ async def build_agent_event_stream(
     journal = turn_journal
     journal_session_id = session_id or "legacy-default"
     selected_route = "unsupported"
+    verified_facts: list[VerifiedMemoryFact] = []
+
+    def on_memory_fact(data: dict) -> None:
+        if len(verified_facts) >= 8:
+            return
+        verified_facts.append(VerifiedMemoryFact(**data))
 
     def on_terminal(status: str, public_result: str) -> None:
         if memory_dispatcher is None:
@@ -139,6 +146,7 @@ async def build_agent_event_stream(
             route=selected_route,
             user_message=message,
             public_result=public_result,
+            verified_facts=tuple(verified_facts),
         )
         memory_dispatcher.submit(completion)
     if journal is not None:
@@ -170,7 +178,10 @@ async def build_agent_event_stream(
 
     try:
         async for frame in iter_sse_events(
-            tokens, turn_id, on_terminal=on_terminal
+            tokens,
+            turn_id,
+            on_terminal=on_terminal,
+            on_memory_fact=on_memory_fact,
         ):
             decoded = _decode_public_frame(frame)
             if decoded is not None:
@@ -233,6 +244,8 @@ async def chat_stream_endpoint(chat: ChatRequest):
         async for token in ProcessUserInput_stream(
             chat.message, session_id=chat.session_id
         ):
+            if is_private_memory_fact_token(token):
+                continue
             yield token
     return StreamingResponse(token_generator(), media_type="text/plain")
 

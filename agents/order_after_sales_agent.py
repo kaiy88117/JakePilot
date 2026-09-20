@@ -166,7 +166,7 @@ class OrderAfterSalesAgent:
         self.return_draft = None
         self._clear_working_state()
 
-    async def run_stream(self, message: str):
+    async def run_stream(self, message: str, turn_id: str | None = None):
         normalized = message.strip()
         context_event = self._memory_context_event(normalized)
         if context_event is not None:
@@ -180,7 +180,7 @@ class OrderAfterSalesAgent:
             return
 
         if normalized in {"确认", "确认提交"}:
-            async for token in self._confirm_pending_action():
+            async for token in self._confirm_pending_action(turn_id=turn_id):
                 yield token
             return
 
@@ -298,7 +298,7 @@ class OrderAfterSalesAgent:
             answer = run.outcome.answer
         yield f"[REPLY][订单售后 Agent]{answer}"
 
-    async def _confirm_pending_action(self):
+    async def _confirm_pending_action(self, turn_id: str | None = None):
         pending = self.pending_action
         if pending is None:
             yield "[REPLY][订单售后 Agent]当前没有待确认操作。"
@@ -332,11 +332,18 @@ class OrderAfterSalesAgent:
                 for event in run.events
             )
             if return_created:
-                self._record_return_event(
-                    order_id=pending.arguments["order_id"],
-                    answer=run.outcome.answer,
-                    trace_id=run.outcome.trace_id,
+                yield self._event_token(
+                    self._return_memory_fact_event(
+                        order_id=pending.arguments["order_id"],
+                        answer=run.outcome.answer,
+                    )
                 )
+                if turn_id is None:
+                    self._record_return_event(
+                        order_id=pending.arguments["order_id"],
+                        answer=run.outcome.answer,
+                        trace_id=run.outcome.trace_id,
+                    )
         if run.outcome.status == TurnStatus.FAILED:
             yield f"[ERROR]{run.outcome.answer}"
             return
@@ -473,6 +480,26 @@ class OrderAfterSalesAgent:
             outcome="completed",
             entity_refs=[order_id],
             source_trace_id=trace_id,
+        )
+
+    @staticmethod
+    def _return_memory_fact_event(
+        *, order_id: str, answer: str
+    ) -> RuntimeEvent:
+        request_match = re.search(r"申请编号为\s*([^。]+)", answer)
+        request_ref = request_match.group(1).strip() if request_match else ""
+        summary = f"订单 {order_id} 已提交退货申请"
+        if request_ref:
+            summary += f"，申请编号 {request_ref}"
+        return RuntimeEvent(
+            type="memory_fact",
+            data={
+                "event_type": "return_requested",
+                "candidate_key": f"return:{order_id}:{request_ref}",
+                "summary": summary,
+                "outcome": "completed",
+                "entity_refs": [order_id],
+            },
         )
 
     @staticmethod

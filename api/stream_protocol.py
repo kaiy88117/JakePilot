@@ -126,10 +126,39 @@ def _runtime_event(
     return encode_sse(event_type, public_data), requested_status
 
 
+def _verified_memory_fact(token: str) -> dict | None:
+    """Read the private memory projection without exposing it as SSE."""
+    try:
+        event = json.loads(token.removeprefix("[EVENT]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(event, dict) or event.get("type") != "memory_fact":
+        return None
+    data = event.get("data")
+    if not isinstance(data, dict):
+        return None
+    allowed = {
+        "event_type",
+        "candidate_key",
+        "summary",
+        "outcome",
+        "entity_refs",
+    }
+    if set(data) != allowed:
+        return None
+    return {key: data[key] for key in allowed}
+
+
+def is_private_memory_fact_token(token: str) -> bool:
+    """Identify private facts so legacy raw streams can suppress them too."""
+    return token.startswith("[EVENT]") and _verified_memory_fact(token) is not None
+
+
 async def iter_sse_events(
     tokens: AsyncIterable[str],
     turn_id: str,
     on_terminal: Callable[[str, str], object] | None = None,
+    on_memory_fact: Callable[[dict], object] | None = None,
 ) -> AsyncIterator[str]:
     """Convert tagged legacy output into public, structured turn events.
 
@@ -168,6 +197,14 @@ async def iter_sse_events(
                 continue
 
             if token.startswith("[EVENT]"):
+                memory_fact = _verified_memory_fact(token)
+                if memory_fact is not None and on_memory_fact is not None:
+                    try:
+                        result = on_memory_fact(memory_fact)
+                        if inspect.isawaitable(result):
+                            await result
+                    except Exception:
+                        pass
                 event_frame, requested_status = _runtime_event(token, turn_id)
                 if event_frame:
                     yield event_frame

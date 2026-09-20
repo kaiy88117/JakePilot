@@ -314,6 +314,54 @@ def test_build_agent_event_stream_submits_server_scoped_completion():
     assert completion.public_result == "退货申请已提交，申请编号为 AS-001。"
 
 
+def test_hidden_verified_memory_fact_is_attached_to_terminal_completion():
+    from web.routes import build_agent_event_stream
+
+    class RecordingDispatcher:
+        def __init__(self):
+            self.items = []
+
+        def submit(self, completion):
+            self.items.append(completion)
+            return True
+
+    dispatcher = RecordingDispatcher()
+
+    async def fake_processor(message: str):
+        yield "[THOUGHT][归类机器人] 已识别为订单售后任务，转交订单售后 Agent 处理。"
+        yield (
+            '[EVENT]{"type":"memory_fact","data":'
+            '{"event_type":"return_requested",'
+            '"candidate_key":"return:JP20260920001:AS-001",'
+            '"summary":"订单 JP20260920001 已提交退货申请，申请编号 AS-001",'
+            '"outcome":"completed",'
+            '"entity_refs":["JP20260920001"]}}'
+        )
+        yield "[REPLY][订单售后 Agent]退货申请已提交。"
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "确认提交",
+                turn_id="turn-verified-fact",
+                session_id="session-a",
+                processor=fake_processor,
+                memory_dispatcher=dispatcher,
+            )
+        ]
+
+    frames = asyncio.run(collect())
+
+    assert all(name != "memory_fact" for name, _ in frames)
+    assert "JP20260920001" not in json.dumps(frames, ensure_ascii=False)
+    completion = dispatcher.items[0]
+    assert len(completion.verified_facts) == 1
+    assert completion.verified_facts[0].candidate_key == (
+        "return:JP20260920001:AS-001"
+    )
+
+
 def test_active_order_flow_is_inferred_from_safe_tool_event():
     from web.routes import build_agent_event_stream
 

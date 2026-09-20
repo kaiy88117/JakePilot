@@ -87,6 +87,11 @@ def test_confirmation_executes_the_frozen_action_once(tmp_path):
     assert "当前没有待确认操作" in _answer(repeated)
     assert agent.service.count_return_requests() == 1
     assert agent.has_pending_action is False
+    memory_fact = next(
+        event for event in _events(confirmed) if event["type"] == "memory_fact"
+    )
+    assert memory_fact["data"]["event_type"] == "return_requested"
+    assert memory_fact["data"]["entity_refs"] == ["JP20260919002"]
 
 
 def test_return_reason_can_be_completed_in_a_follow_up_turn(tmp_path):

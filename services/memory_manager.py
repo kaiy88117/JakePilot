@@ -188,6 +188,46 @@ class MemoryManager:
             valid_until=_utc_naive(valid_until) if valid_until else None,
         )
 
+    def set_profile_once(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        memory_key: str,
+        memory_value,
+        candidate_key: str,
+        source_type: str,
+        confidence: float,
+        source_trace_id: str,
+        now: datetime | None = None,
+        valid_until: datetime | None = None,
+    ) -> dict:
+        if memory_key in _SENSITIVE_PROFILE_FIELDS:
+            raise ValueError("sensitive profile field is not allowed")
+        if source_type not in {"explicit", "inferred"}:
+            raise ValueError("source_type must be explicit or inferred")
+        if not 0 <= confidence <= 1:
+            raise ValueError("confidence must be between 0 and 1")
+        material = "\x1f".join(
+            [tenant_id, user_id, source_trace_id, memory_key, candidate_key]
+        )
+        memory_id = (
+            "profile_"
+            + hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
+        )
+        return self.repository.set_profile_once(
+            memory_id=memory_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            memory_key=memory_key,
+            memory_value=memory_value,
+            source_type=source_type,
+            confidence=confidence,
+            source_trace_id=source_trace_id,
+            valid_from=_utc_naive(now),
+            valid_until=_utc_naive(valid_until) if valid_until else None,
+        )
+
     def recall_profiles(
         self,
         tenant_id: str,

@@ -37,24 +37,28 @@ class AppointmentDatabase:
     
     def save_appointment(self, technician_id: str, start_time: datetime, 
                         end_time: datetime, appointment_history: Dict[str, Any], 
-                        session_id: str) -> bool:
+                        session_id: str) -> str | None:
         """保存预约信息到数据库"""
         try:
             # 通过Services层保存预约
-            success = self.appointment_service.save_appointment(
+            appointment_id = self.appointment_service.save_appointment(
                 technician_id, start_time, end_time, appointment_history, session_id
             )
             
-            if success:
+            if appointment_id is not None:
                 # 记录用户行为
                 self._record_user_behavior(start_time, end_time, technician_id, 
                                          appointment_history, session_id)
             
-            return success
+            return (
+                f"APT-{appointment_id}"
+                if appointment_id is not None
+                else None
+            )
             
         except Exception as e:
             print(f"保存预约信息到数据库失败：{e}")
-            return False
+            return None
     
     def update_memory_schedule(self, technician_id: str, start_time: datetime, end_time: datetime):
         """更新内存中的技师忙碌时间段"""

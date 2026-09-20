@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from threading import RLock
 from uuid import uuid4
 
 from db.base.session_manager import SessionManager
 from db.models import MemoryEvent, UserProfileMemory, WorkingState
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 
 class MemoryRepository:
     def __init__(self, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
+        self._profile_write_lock = RLock()
 
     def save_working(
         self,
@@ -256,6 +259,83 @@ class MemoryRepository:
             session.add(row)
             session.flush()
             return self._profile_dict(row)
+
+    def set_profile_once(
+        self,
+        *,
+        memory_id: str,
+        tenant_id: str,
+        user_id: str,
+        memory_key: str,
+        memory_value,
+        source_type: str,
+        confidence: float,
+        source_trace_id: str,
+        valid_from: datetime,
+        valid_until: datetime | None,
+    ) -> dict:
+        """Atomically apply one scoped profile candidate at most once."""
+        with self._profile_write_lock:
+            try:
+                with self.session_manager.session_scope() as session:
+                    if session.bind.dialect.name == "sqlite":
+                        session.execute(text("BEGIN IMMEDIATE"))
+                    existing = (
+                        session.query(UserProfileMemory)
+                        .filter(
+                            UserProfileMemory.memory_id == memory_id,
+                            UserProfileMemory.tenant_id == tenant_id,
+                            UserProfileMemory.user_id == user_id,
+                        )
+                        .first()
+                    )
+                    if existing is not None:
+                        return {
+                            **self._profile_dict(existing),
+                            "created": False,
+                        }
+                    current = (
+                        session.query(UserProfileMemory)
+                        .filter(
+                            UserProfileMemory.tenant_id == tenant_id,
+                            UserProfileMemory.user_id == user_id,
+                            UserProfileMemory.memory_key == memory_key,
+                            UserProfileMemory.superseded_by.is_(None),
+                        )
+                        .all()
+                    )
+                    for old in current:
+                        old.valid_until = valid_from
+                        old.superseded_by = memory_id
+                    row = UserProfileMemory(
+                        memory_id=memory_id,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        memory_key=memory_key,
+                        memory_value=memory_value,
+                        source_type=source_type,
+                        confidence=confidence,
+                        source_trace_id=source_trace_id,
+                        valid_from=valid_from,
+                        valid_until=valid_until,
+                    )
+                    session.add(row)
+                    session.flush()
+                    return {**self._profile_dict(row), "created": True}
+            except IntegrityError:
+                with self.session_manager.session_scope() as session:
+                    existing = (
+                        session.query(UserProfileMemory)
+                        .filter(
+                            UserProfileMemory.memory_id == memory_id,
+                            UserProfileMemory.tenant_id == tenant_id,
+                            UserProfileMemory.user_id == user_id,
+                        )
+                        .first()
+                    )
+                    if existing is None:
+                        raise
+                    return {**self._profile_dict(existing), "created": False}
 
     def recall_profiles(
         self,
