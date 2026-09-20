@@ -35,6 +35,16 @@ def test_create_or_get_handoff_is_idempotent_and_tenant_scoped(tmp_path):
     assert service.list_recent("tenant-b") == []
 
 
+def test_handoff_replay_rejects_a_different_user_or_session(tmp_path):
+    service = HandoffService(f"sqlite:///{tmp_path / 'handoff-owner.db'}")
+    service.create_or_get(**_handoff_payload())
+
+    with pytest.raises(ValueError, match="ownership"):
+        service.create_or_get(
+            **_handoff_payload(user_id="user-b", session_id="session-b")
+        )
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -153,12 +163,28 @@ def test_explicit_handoff_matcher_accepts_action_requests(message):
 
 @pytest.mark.parametrize(
     "message",
-    ["人工客服上班时间", "人工客服电话是多少", "怎么联系人工客服"],
+    [
+        "人工客服上班时间",
+        "人工客服电话是多少",
+        "怎么联系人工客服",
+        "不要转人工，继续查询订单",
+    ],
 )
 def test_explicit_handoff_matcher_rejects_informational_questions(message):
     from agents.human_handoff_agent import is_explicit_handoff_request
 
     assert is_explicit_handoff_request(message) is False
+
+
+def test_explicit_handoff_matcher_uses_the_action_clause_not_global_keywords():
+    from agents.human_handoff_agent import is_explicit_handoff_request
+
+    assert (
+        is_explicit_handoff_request(
+            "不用告诉我人工客服上班时间，现在请转人工"
+        )
+        is True
+    )
 
 
 def test_explicit_human_request_bypasses_llm_and_active_return_flow(tmp_path):
@@ -239,3 +265,55 @@ def test_handoff_failure_does_not_fabricate_ticket_number():
     assert "HO-" not in serialized
     assert "PRIVATE_DATABASE_DIAGNOSTIC" not in serialized
     assert "暂时无法创建人工接管工单" in serialized
+
+
+def test_successful_handoff_clears_pending_return_and_working_memory(tmp_path):
+    from agents.human_handoff_agent import HumanHandoffAgent
+    from agents.order_after_sales_agent import OrderAfterSalesAgent
+    from agents.task_classification.agent_router import AgentRouter
+    from agents.task_classification.state_manager import StateManager
+    from config.constants import SharedState
+    from services.memory_manager import MemoryManager
+    from services.order_after_sales_service import OrderAfterSalesService
+
+    database_url = f"sqlite:///{tmp_path / 'handoff-flow.db'}"
+    order_service = OrderAfterSalesService(database_url)
+    order_service.seed_demo_data()
+    memory = MemoryManager(database_url)
+    order_agent = OrderAfterSalesAgent(
+        "session-a", order_service, memory_manager=memory
+    )
+
+    async def collect(source):
+        return [token async for token in source]
+
+    asyncio.run(
+        collect(
+            order_agent.run_stream(
+                "申请退货 JP20260919002，原因是商品破损"
+            )
+        )
+    )
+    assert order_agent.has_pending_action is True
+    assert memory.get_working("demo", "user-a", "session-a") is not None
+
+    state_manager = StateManager(SharedState())
+    state_manager.transition_to_order_after_sales()
+    router = AgentRouter(
+        appointment_agent=None,
+        consultant_agent=None,
+        state_manager=state_manager,
+        order_after_sales_agent=order_agent,
+        human_handoff_agent=HumanHandoffAgent(
+            "session-a", HandoffService(database_url)
+        ),
+    )
+    asyncio.run(
+        collect(router.route_to_handoff("请转人工客服", "turn-clear-flow"))
+    )
+
+    assert order_agent.has_active_flow is False
+    assert memory.get_working("demo", "user-a", "session-a") is None
+    confirmation = asyncio.run(collect(order_agent.run_stream("确认提交")))
+    assert "当前没有待确认操作" in "".join(confirmation)
+    assert order_service.count_return_requests() == 0

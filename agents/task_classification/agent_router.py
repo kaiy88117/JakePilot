@@ -8,6 +8,7 @@
 4. 提供统一的Agent调用接口
 """
 
+import json
 from typing import Any, AsyncGenerator
 from .state_manager import StateManager
 
@@ -141,17 +142,33 @@ class AgentRouter:
     ) -> AsyncGenerator[str, None]:
         if not self.human_handoff_agent:
             yield "[ERROR]人工接管服务暂时不可用，请稍后重试"
-            self.state_manager.reset_to_classify()
             return
 
+        handoff_succeeded = False
         try:
             async for token in self.human_handoff_agent.run_stream(
                 task, turn_id=turn_id
             ):
+                if token.startswith("[EVENT]"):
+                    try:
+                        event = json.loads(token.removeprefix("[EVENT]"))
+                        if event.get("type") == "handoff_created":
+                            handoff_succeeded = True
+                    except (AttributeError, json.JSONDecodeError):
+                        pass
                 yield token
         except Exception:
             yield "[ERROR]人工接管服务暂时不可用，请稍后重试"
-        finally:
+
+        if handoff_succeeded:
+            if self.appointment_agent and hasattr(
+                self.appointment_agent, "reset"
+            ):
+                self.appointment_agent.reset()
+            if self.order_after_sales_agent and hasattr(
+                self.order_after_sales_agent, "cancel_active_flow"
+            ):
+                self.order_after_sales_agent.cancel_active_flow()
             self.state_manager.reset_to_classify()
     
     async def handle_unsupported_task(self, category: str) -> AsyncGenerator[str, None]:

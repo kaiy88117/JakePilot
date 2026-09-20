@@ -12,23 +12,16 @@ from runtime.tools import ToolContext, ToolRegistry
 from services.handoff_service import HandoffService
 
 
-_INFORMATIONAL_MARKERS = (
-    "上班时间",
-    "工作时间",
-    "客服电话",
-    "电话是多少",
-    "怎么联系",
-    "如何联系",
-    "几点",
-    "是否在线",
-)
 _ACTION_PATTERNS = (
     re.compile(r"转(?:接)?(?:到)?人工(?:客服)?"),
     re.compile(r"(?:找|要|需要|请求|联系|接入|呼叫)(?:一下)?(?:人工|真人)(?:客服)?"),
     re.compile(r"(?:请|需要|要求)?人工处理"),
     re.compile(r"(?:请|需要|要求)?客服介入"),
-    re.compile(r"真人客服"),
 )
+_NEGATED_ACTION_PREFIX = re.compile(
+    r"(?:不要|不用|不需要|不想|无需|暂不|别(?:给我)?)(?:再|立即|马上)?$"
+)
+_INFORMATIONAL_PREFIX = re.compile(r"(?:怎么|如何|什么是|为什么)$")
 
 
 def is_explicit_handoff_request(message: str) -> bool:
@@ -36,11 +29,17 @@ def is_explicit_handoff_request(message: str) -> bool:
     normalized = re.sub(r"\s+", "", str(message or "")).strip("，。！？?!")
     if not normalized:
         return False
-    if any(marker in normalized for marker in _INFORMATIONAL_MARKERS):
-        return False
     if normalized in {"人工", "人工客服", "真人客服"}:
         return True
-    return any(pattern.search(normalized) for pattern in _ACTION_PATTERNS)
+    for pattern in _ACTION_PATTERNS:
+        for match in pattern.finditer(normalized):
+            prefix = normalized[max(0, match.start() - 8) : match.start()]
+            if _NEGATED_ACTION_PREFIX.search(prefix):
+                continue
+            if _INFORMATIONAL_PREFIX.search(prefix):
+                continue
+            return True
+    return False
 
 
 class _HandoffPlanner:

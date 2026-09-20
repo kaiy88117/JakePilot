@@ -160,6 +160,12 @@ class OrderAfterSalesAgent:
     def has_active_flow(self) -> bool:
         return self.pending_action is not None or self.return_draft is not None
 
+    def cancel_active_flow(self) -> None:
+        """Terminate any draft or confirmed-payload flow for this session."""
+        self.pending_action = None
+        self.return_draft = None
+        self._clear_working_state()
+
     async def run_stream(self, message: str):
         normalized = message.strip()
         context_event = self._memory_context_event(normalized)

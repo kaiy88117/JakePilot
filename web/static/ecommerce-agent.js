@@ -156,6 +156,31 @@
         return null;
     }
 
+    function describeTurnEnd(payload = {}) {
+        if (payload.status === "needs_input") {
+            return {
+                title: "任务暂停",
+                detail: "等待补充信息或确认",
+                state: "needs-input",
+                label: "等待输入"
+            };
+        }
+        if (payload.status === "handed_off") {
+            return {
+                title: "人工接管已创建",
+                detail: "等待人工客服继续处理",
+                state: "handed-off",
+                label: "已转人工"
+            };
+        }
+        return {
+            title: "任务结束",
+            detail: "回答已完成",
+            state: "completed",
+            label: "已完成"
+        };
+    }
+
     if (typeof module !== "undefined" && module.exports) {
         module.exports = {
             parseSseChunk,
@@ -163,7 +188,8 @@
             createSessionId,
             buildChatPayload,
             createRequestGuard,
-            describeRuntimeEvent
+            describeRuntimeEvent,
+            describeTurnEnd
         };
     }
     if (typeof document === "undefined") return;
@@ -232,21 +258,18 @@
         } else if (event === "route_selected") {
             currentRoute.textContent = payload.label;
             appendTimeline("完成任务路由", payload.label);
-        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required" || event === "knowledge_retrieval" || event === "memory_context" || event === "decision_model_trace") {
+        } else if (describeRuntimeEvent(event, payload)) {
             const description = describeRuntimeEvent(event, payload);
-            if (description) appendTimeline(description.title, description.detail);
+            if (event === "handoff_created") currentRoute.textContent = "人工客服接管";
+            appendTimeline(description.title, description.detail);
         } else if (event === "answer_delta") {
             if (!activeAnswer) activeAnswer = createMessage("assistant", "");
             activeAnswer.textContent += payload.delta || "";
             scrollChat();
         } else if (event === "turn_ended") {
-            if (payload.status === "needs_input") {
-                appendTimeline("任务暂停", "等待补充信息或确认");
-                setTerminalStatus("needs-input", "等待输入");
-            } else {
-                appendTimeline("任务结束", "回答已完成");
-                setTerminalStatus("completed", "已完成");
-            }
+            const terminal = describeTurnEnd(payload);
+            appendTimeline(terminal.title, terminal.detail);
+            setTerminalStatus(terminal.state, terminal.label);
         } else if (event === "turn_failed") {
             if (!activeAnswer) activeAnswer = createMessage("assistant", "", "message-error");
             if (!activeAnswer.textContent) activeAnswer.textContent = payload.message || "服务暂时不可用，请稍后重试";

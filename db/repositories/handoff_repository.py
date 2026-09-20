@@ -31,6 +31,7 @@ class HandoffRepository:
             with self.session_manager.session_scope() as session:
                 existing = self._find(session, tenant_id, turn_id)
                 if existing is not None:
+                    self._require_owner(existing, user_id, session_id)
                     return self._to_dict(existing)
 
                 ticket = HumanHandoffTicket(
@@ -54,6 +55,7 @@ class HandoffRepository:
                 existing = self._find(session, tenant_id, turn_id)
                 if existing is None:
                     raise
+                self._require_owner(existing, user_id, session_id)
                 return self._to_dict(existing)
 
     def list_recent(self, tenant_id: str, limit: int = 20) -> list[dict]:
@@ -85,6 +87,15 @@ class HandoffRepository:
             )
             .first()
         )
+
+    @staticmethod
+    def _require_owner(
+        ticket: HumanHandoffTicket,
+        user_id: str,
+        session_id: str,
+    ) -> None:
+        if ticket.user_id != user_id or ticket.session_id != session_id:
+            raise ValueError("handoff ownership mismatch")
 
     @staticmethod
     def _to_dict(ticket: HumanHandoffTicket) -> dict:

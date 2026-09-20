@@ -229,6 +229,28 @@ process.stdout.write(JSON.stringify(handoff));
     }
 
 
+def test_frontend_maps_handed_off_to_a_distinct_terminal_state():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ describeTurnEnd }} = require({json.dumps(str(script_path))});
+process.stdout.write(JSON.stringify(describeTurnEnd({{status: 'handed_off'}})));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert json.loads(result.stdout) == {
+        "title": "人工接管已创建",
+        "detail": "等待人工客服继续处理",
+        "state": "handed-off",
+        "label": "已转人工",
+    }
+
+
 def test_frontend_describes_hermesrag_evidence_and_local_fallback():
     script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
     node_program = f"""
