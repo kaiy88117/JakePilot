@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 from evaluation.evidence_store import EvidenceStore
+from evaluation.formal_gate import FormalEvaluationGate, FormalEvaluationManifest
 from evaluation.order_runner import OrderAfterSalesEvalRunner, load_cases
 
 
@@ -49,9 +50,55 @@ def main() -> int:
         default=Path("artifacts/eval/reports"),
     )
     parser.add_argument("--code-revision", default=None)
+    parser.add_argument(
+        "--formal",
+        action="store_true",
+        help="启用正式评测门禁；不满足数据集与版本条件时不运行、不写报告。",
+    )
+    parser.add_argument("--model-version", default="not_pinned")
+    parser.add_argument("--prompt-version", default="not_pinned")
+    parser.add_argument("--tool-fixture-version", default="not_pinned")
     args = parser.parse_args()
 
     cases = load_cases(args.cases) if args.cases else load_cases()
+    if args.formal:
+        manifest = FormalEvaluationManifest(
+            dataset_version=cases[0].dataset_version,
+            model_version=args.model_version,
+            prompt_version=args.prompt_version,
+            tool_fixture_version=args.tool_fixture_version,
+            repeats=3,
+        )
+        assessment = FormalEvaluationGate().assess(cases, manifest)
+        if not assessment.eligible:
+            print(
+                json.dumps(
+                    {
+                        "status": "formal_gate_rejected",
+                        "formal_benchmark": False,
+                        "case_count": assessment.case_count,
+                        "dataset_digest": assessment.dataset_digest,
+                        "errors": list(assessment.errors),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 2
+        print(
+            json.dumps(
+                {
+                    "status": "formal_runner_not_configured",
+                    "formal_benchmark": False,
+                    "case_count": assessment.case_count,
+                    "dataset_digest": assessment.dataset_digest,
+                    "errors": [
+                        "multi_domain_runner_and_baseline_are_required"
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
     suite = OrderAfterSalesEvalRunner(args.work_dir).run(cases)
     report_path = EvidenceStore(args.output_dir).write(
         suite,

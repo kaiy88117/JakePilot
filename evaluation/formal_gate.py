@@ -28,7 +28,7 @@ class FormalEvaluationManifest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     dataset_version: str = Field(
-        pattern=r"^[a-z0-9._-]+-golden-v\d+$"
+        pattern=r"^[a-z0-9._-]+-(?:smoke|golden)-v\d+$"
     )
     model_version: str = Field(min_length=1, max_length=128)
     prompt_version: str = Field(min_length=1, max_length=128)
@@ -66,6 +66,8 @@ class FormalEvaluationGate:
     ) -> FormalGateResult:
         counts = Counter(case.category for case in cases)
         errors: list[str] = []
+        if "-golden-v" not in manifest.dataset_version:
+            errors.append("dataset_version_not_golden")
         if len(cases) < 200:
             errors.append("case_count_below_200")
         for category, target in FORMAL_CATEGORY_TARGETS.items():
@@ -86,18 +88,6 @@ class FormalEvaluationGate:
         if manifest.repeats != 3:
             errors.append("repeat_count_must_equal_3")
 
-        digest_payload = [
-            case.model_dump(mode="json")
-            for case in sorted(cases, key=lambda item: item.case_id)
-        ]
-        digest = hashlib.sha256(
-            json.dumps(
-                digest_payload,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
         return FormalGateResult(
             eligible=not errors,
             errors=tuple(errors),
@@ -106,5 +96,22 @@ class FormalEvaluationGate:
                 category: counts.get(category, 0)
                 for category in FORMAL_CATEGORY_TARGETS
             },
-            dataset_digest=digest,
+            dataset_digest=dataset_digest(cases),
         )
+
+
+def dataset_digest(cases: tuple[EvalCase, ...]) -> str:
+    """Return a stable digest independent of case file ordering."""
+
+    digest_payload = [
+        case.model_dump(mode="json")
+        for case in sorted(cases, key=lambda item: item.case_id)
+    ]
+    return hashlib.sha256(
+        json.dumps(
+            digest_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()

@@ -15,6 +15,7 @@ from evaluation.contracts import (
     EvalTraceEvent,
 )
 from evaluation.verifier import DeterministicVerifier
+from evaluation.formal_gate import dataset_digest
 from runtime.context_engine import ContextEngine
 from services.memory_manager import MemoryManager
 from services.order_after_sales_service import OrderAfterSalesService
@@ -36,6 +37,7 @@ class CaseRun:
 @dataclass(frozen=True)
 class SuiteRun:
     dataset_version: str
+    dataset_digest: str
     case_runs: tuple[CaseRun, ...]
     summary: dict[str, dict[str, int | float]]
 
@@ -65,6 +67,7 @@ class OrderAfterSalesEvalRunner:
         case_runs = tuple(self._run_case(case) for case in cases)
         return SuiteRun(
             dataset_version=cases[0].dataset_version,
+            dataset_digest=dataset_digest(cases),
             case_runs=case_runs,
             summary=self._summarize(case_runs),
         )

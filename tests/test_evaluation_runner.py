@@ -41,6 +41,15 @@ def test_evidence_store_omits_raw_turns_answers_and_tool_arguments(tmp_path):
     serialized = json.dumps(payload, ensure_ascii=False)
 
     assert payload["suite_kind"] == "smoke"
+    assert payload["formal_benchmark"] is False
+    assert payload["repeat_count"] == 1
+    assert len(payload["dataset_digest"]) == 64
+    assert payload["run_config"] == {
+        "runner": "order_after_sales_deterministic",
+        "model_version": "not_applicable",
+        "prompt_version": "order-after-sales-runtime-v1",
+        "tool_fixture_version": "ecommerce-mock-v1",
+    }
     assert payload["dataset_version"] == "order-after-sales-smoke-v1"
     assert payload["code_revision"] == "abc123"
     assert payload["case_count"] == 6
