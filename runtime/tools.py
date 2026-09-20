@@ -30,6 +30,7 @@ def canonical_payload_hash(payload: dict[str, Any]) -> str:
 class ToolRisk(StrEnum):
     READ = "read"
     WRITE = "write"
+    CONTROL = "control"
 
 
 class ToolContext(BaseModel):
@@ -48,6 +49,7 @@ class ToolResult(BaseModel):
         "not_found",
         "invalid_arguments",
         "confirmation_required",
+        "handed_off",
     ]
     data: dict[str, Any] = Field(default_factory=dict)
     public_message: str = ""
@@ -138,6 +140,11 @@ class ToolRegistry:
                     status="failed",
                     public_message="确认信息已失效，请重新确认",
                 )
+        if spec.risk == ToolRisk.CONTROL and not context.idempotency_key:
+            return ToolResult(
+                status="failed",
+                public_message="人工接管请求缺少幂等信息",
+            )
 
         try:
             return await spec.handler(parsed_arguments, context)

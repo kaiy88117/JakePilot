@@ -240,6 +240,14 @@ class BoundedAgentRuntime:
                     "confirmation_required",
                 )
 
+            if result.status == "handed_off":
+                return finish(
+                    TurnStatus.HANDED_OFF,
+                    result.public_message or "已转人工客服",
+                    step,
+                    "human_handoff",
+                )
+
         return finish(
             TurnStatus.FAILED,
             "任务步骤已达到上限",

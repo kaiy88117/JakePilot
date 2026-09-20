@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 class TurnStatus(StrEnum):
     COMPLETED = "completed"
     NEEDS_INPUT = "needs_input"
+    HANDED_OFF = "handed_off"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
