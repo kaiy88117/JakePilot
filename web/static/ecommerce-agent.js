@@ -97,6 +97,9 @@
         if (event === "input_required") {
             return { title: "等待补充信息", detail: payload.summary || "请补充任务信息" };
         }
+        if (event === "handoff_created") {
+            return { title: "已转人工客服", detail: `工单号 ${payload.ticket_no || "待生成"}` };
+        }
         if (event === "knowledge_retrieval") {
             if (payload.fallback) {
                 return { title: "知识服务降级", detail: "已切换本地知识库" };

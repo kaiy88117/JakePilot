@@ -241,6 +241,16 @@ class BoundedAgentRuntime:
                 )
 
             if result.status == "handed_off":
+                trace.record(
+                    RuntimeEvent(
+                        type="handoff_created",
+                        data={
+                            key: result.data[key]
+                            for key in ("ticket_no", "reason_code", "status")
+                            if key in result.data
+                        },
+                    )
+                )
                 return finish(
                     TurnStatus.HANDED_OFF,
                     result.public_message or "已转人工客服",

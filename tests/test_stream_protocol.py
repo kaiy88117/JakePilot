@@ -172,9 +172,14 @@ def test_build_agent_event_stream_forwards_session_id(monkeypatch):
 
     captured = {}
 
-    async def fake_processor(message: str, session_id: str | None = None):
+    async def fake_processor(
+        message: str,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+    ):
         captured["message"] = message
         captured["session_id"] = session_id
+        captured["turn_id"] = turn_id
         yield "[REPLY][咨询机器人]已隔离"
 
     monkeypatch.setattr(chat_handler, "ProcessUserInput_stream", fake_processor)
@@ -190,7 +195,11 @@ def test_build_agent_event_stream_forwards_session_id(monkeypatch):
         ]
 
     frames = asyncio.run(collect())
-    assert captured == {"message": "查询订单", "session_id": "session-a"}
+    assert captured == {
+        "message": "查询订单",
+        "session_id": "session-a",
+        "turn_id": "turn-session",
+    }
     assert frames[-1][0] == "turn_ended"
 
 
@@ -422,3 +431,30 @@ def test_memory_context_event_only_exposes_aggregate_fields():
         "dropped_count": 3,
     }
     assert "private" not in json.dumps(events, ensure_ascii=False)
+
+
+def test_handoff_event_projects_only_safe_fields_and_terminal_status():
+    events = _collect(
+        _tokens(
+            '[EVENT]{"type":"handoff_created","data":{"ticket_no":"HO-0001","reason_code":"user_requested","status":"open","raw_message":"secret","summary":"private"}}',
+            "[REPLY][人工接管 Agent]已为您转接人工客服，工单号 HO-0001。",
+        ),
+        "turn-handoff",
+    )
+
+    handoff = next(
+        payload for name, payload in events if name == "handoff_created"
+    )
+    assert handoff == {
+        "turn_id": "turn-handoff",
+        "ticket_no": "HO-0001",
+        "reason_code": "user_requested",
+        "status": "open",
+    }
+    assert events[-1] == (
+        "turn_ended",
+        {"turn_id": "turn-handoff", "status": "handed_off"},
+    )
+    serialized = json.dumps(events, ensure_ascii=False)
+    assert "raw_message" not in serialized
+    assert "private" not in serialized

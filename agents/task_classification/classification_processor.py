@@ -13,6 +13,7 @@ from .task_classifier import TaskClassifier
 from .state_manager import StateManager
 from .agent_router import AgentRouter
 from .unrelated_handler import UnrelatedHandler
+from agents.human_handoff_agent import is_explicit_handoff_request
 
 
 class ClassificationProcessor:
@@ -37,7 +38,9 @@ class ClassificationProcessor:
         self.agent_router = agent_router
         self.unrelated_handler = unrelated_handler
     
-    async def process_task_stream(self, task: str) -> AsyncGenerator[str, None]:
+    async def process_task_stream(
+        self, task: str, turn_id: str | None = None
+    ) -> AsyncGenerator[str, None]:
         """
         流式处理任务分类和路由
         
@@ -48,6 +51,12 @@ class ClassificationProcessor:
             str: 流式响应内容
         """
         try:
+            if is_explicit_handoff_request(task):
+                async for token in self.agent_router.route_to_handoff(
+                    task, turn_id=turn_id
+                ):
+                    yield token
+                return
             # 检查是否需要进行分类
             if self.state_manager.should_classify():
                 if (
@@ -87,7 +96,9 @@ class ClassificationProcessor:
             yield f"[ERROR]处理任务时发生错误: {str(e)}"
             self.state_manager.force_reset()
     
-    async def process_task_sync(self, task: str) -> str:
+    async def process_task_sync(
+        self, task: str, turn_id: str | None = None
+    ) -> str:
         """
         同步处理任务分类和路由（非流式）
         
@@ -98,6 +109,13 @@ class ClassificationProcessor:
             str: 处理结果
         """
         try:
+            if is_explicit_handoff_request(task):
+                result = ""
+                async for token in self.agent_router.route_to_handoff(
+                    task, turn_id=turn_id
+                ):
+                    result += token
+                return result
             # 检查是否需要进行分类
             if self.state_manager.should_classify():
                 if (

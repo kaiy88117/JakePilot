@@ -205,6 +205,30 @@ process.stdout.write(JSON.stringify({{ started, finished, confirmation, inputReq
     }
 
 
+def test_frontend_describes_handoff_without_exposing_internal_fields():
+    script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
+    node_program = f"""
+const {{ describeRuntimeEvent }} = require({json.dumps(str(script_path))});
+const handoff = describeRuntimeEvent('handoff_created', {{
+  ticket_no: 'HO-0001', reason_code: 'user_requested', status: 'open',
+  summary: 'private', raw_message: 'secret'
+}});
+process.stdout.write(JSON.stringify(handoff));
+"""
+    result = subprocess.run(
+        ["node", "-e", node_program],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert json.loads(result.stdout) == {
+        "title": "已转人工客服",
+        "detail": "工单号 HO-0001",
+    }
+
+
 def test_frontend_describes_hermesrag_evidence_and_local_fallback():
     script_path = ROOT / "web" / "static" / "ecommerce-agent.js"
     node_program = f"""

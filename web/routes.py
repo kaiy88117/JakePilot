@@ -109,7 +109,9 @@ async def build_agent_event_stream(
     try:
         if processor is None:
             from api.chat_handler import ProcessUserInput_stream
-            tokens = ProcessUserInput_stream(message, session_id=session_id)
+            tokens = ProcessUserInput_stream(
+                message, session_id=session_id, turn_id=turn_id
+            )
         else:
             tokens = processor(message)
     except Exception:

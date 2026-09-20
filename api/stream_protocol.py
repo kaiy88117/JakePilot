@@ -45,6 +45,9 @@ _PUBLIC_RUNTIME_FIELDS = {
             "fallback_reason",
         }
     ),
+    "handoff_created": frozenset(
+        {"ticket_no", "reason_code", "status"}
+    ),
 }
 
 
@@ -117,7 +120,7 @@ def _runtime_event(
     requested_status = (
         "needs_input"
         if event_type in {"confirmation_required", "input_required"}
-        else None
+        else "handed_off" if event_type == "handoff_created" else None
     )
     return encode_sse(event_type, public_data), requested_status
 

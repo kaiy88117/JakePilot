@@ -27,11 +27,13 @@ class TaskClassificationAgent:
         appointment_agent,
         consultant_agent,
         order_after_sales_agent=None,
+        human_handoff_agent=None,
     ):
         # 基础设置
         self.appointment_agent = appointment_agent
         self.consultant_agent = consultant_agent
         self.order_after_sales_agent = order_after_sales_agent
+        self.human_handoff_agent = human_handoff_agent
         
         # 初始化LLM
         self.llm = self._initialize_llm()
@@ -44,6 +46,7 @@ class TaskClassificationAgent:
             consultant_agent, 
             self.state_manager,
             order_after_sales_agent,
+            human_handoff_agent,
         )
         self.unrelated_handler = UnrelatedHandler(self.state_manager)
         self.classification_processor = ClassificationProcessor(
@@ -79,9 +82,11 @@ class TaskClassificationAgent:
         """分类任务（向后兼容方法）"""
         return await self.classification_processor.process_task_sync(task)
 
-    async def classify_task_stream(self, task):
+    async def classify_task_stream(self, task, turn_id: str | None = None):
         """流式分类任务（主要入口）"""
-        async for token in self.classification_processor.process_task_stream(task):
+        async for token in self.classification_processor.process_task_stream(
+            task, turn_id=turn_id
+        ):
             yield token
 
     async def handle_unrelated(self, user_input):

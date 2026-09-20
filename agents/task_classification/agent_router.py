@@ -21,6 +21,7 @@ class AgentRouter:
         consultant_agent: Any,
         state_manager: StateManager,
         order_after_sales_agent: Any = None,
+        human_handoff_agent: Any = None,
     ):
         """
         初始化路由器
@@ -33,6 +34,7 @@ class AgentRouter:
         self.appointment_agent = appointment_agent
         self.consultant_agent = consultant_agent
         self.order_after_sales_agent = order_after_sales_agent
+        self.human_handoff_agent = human_handoff_agent
         self.state_manager = state_manager
         
         # 设置Agent的共享状态
@@ -133,6 +135,24 @@ class AgentRouter:
 
         if not self._order_flow_active():
             self.state_manager.reset_to_classify()
+
+    async def route_to_handoff(
+        self, task: str, turn_id: str | None = None
+    ) -> AsyncGenerator[str, None]:
+        if not self.human_handoff_agent:
+            yield "[ERROR]人工接管服务暂时不可用，请稍后重试"
+            self.state_manager.reset_to_classify()
+            return
+
+        try:
+            async for token in self.human_handoff_agent.run_stream(
+                task, turn_id=turn_id
+            ):
+                yield token
+        except Exception:
+            yield "[ERROR]人工接管服务暂时不可用，请稍后重试"
+        finally:
+            self.state_manager.reset_to_classify()
     
     async def handle_unsupported_task(self, category: str) -> AsyncGenerator[str, None]:
         """
@@ -188,4 +208,6 @@ class AgentRouter:
             services.append("商品与售后政策咨询")
         if self.order_after_sales_agent:
             services.append("订单、物流与退货办理")
+        if self.human_handoff_agent:
+            services.append("人工客服接管")
         return services

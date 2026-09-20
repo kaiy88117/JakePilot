@@ -13,11 +13,14 @@ from config.database import db_config
 from runtime.context_engine import ContextEngine
 from services.memory_manager import MemoryManager
 from services.order_after_sales_service import OrderAfterSalesService
+from services.handoff_service import HandoffService
+from agents.human_handoff_agent import HumanHandoffAgent
 
 
 LEGACY_SESSION_ID = "legacy-default"
 _order_after_sales_service: OrderAfterSalesService | None = None
 _memory_manager: MemoryManager | None = None
+_handoff_service: HandoffService | None = None
 
 
 def _get_order_after_sales_service() -> OrderAfterSalesService:
@@ -34,6 +37,13 @@ def _get_memory_manager() -> MemoryManager:
     if _memory_manager is None:
         _memory_manager = MemoryManager(db_config.connection_string)
     return _memory_manager
+
+
+def _get_handoff_service() -> HandoffService:
+    global _handoff_service
+    if _handoff_service is None:
+        _handoff_service = HandoffService(db_config.connection_string)
+    return _handoff_service
 
 
 class SessionRegistryFull(RuntimeError):
@@ -58,6 +68,10 @@ def _create_task_agent(session_id: str) -> TaskClassificationAgent:
             service=_get_order_after_sales_service(),
             memory_manager=memory_manager,
             context_engine=ContextEngine(memory_manager),
+        ),
+        HumanHandoffAgent(
+            session_id=session_id,
+            service=_get_handoff_service(),
         ),
     )
 
@@ -127,6 +141,7 @@ async def ProcessUserInput_stream(
     state=None,
     context=None,
     session_id: str | None = None,
+    turn_id: str | None = None,
 ):
     """
     user_input: 用户输入
@@ -139,5 +154,11 @@ async def ProcessUserInput_stream(
         context = {}
 
     async with session_registry.acquire(session_id or LEGACY_SESSION_ID) as task_agent:
-        async for token in task_agent.classify_task_stream(user_input):
+        if turn_id is None:
+            token_stream = task_agent.classify_task_stream(user_input)
+        else:
+            token_stream = task_agent.classify_task_stream(
+                user_input, turn_id=turn_id
+            )
+        async for token in token_stream:
             yield token
