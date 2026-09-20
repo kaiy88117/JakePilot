@@ -39,3 +39,15 @@ def build_task_graph_category_runners(
         close_agent=close_agent,
     )
     return {category: runner for category in FORMAL_CATEGORIES}
+
+
+def build_isolated_task_graph_category_runners(
+    fixture_factory: Callable[[EvalCase], Any],
+) -> dict[str, StreamCategoryEvalRunner]:
+    """Wire an isolated fixture factory into every formal category."""
+
+    return build_task_graph_category_runners(
+        agent_factory=fixture_factory,
+        write_count=lambda session: session.evaluation_write_count(),
+        close_agent=lambda session: session.close(),
+    )

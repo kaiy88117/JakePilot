@@ -14,10 +14,14 @@ from config.constants import busy_periods_dict
 class AppointmentDatabase:
     """预约数据库操作器"""
     
-    def __init__(self):
+    def __init__(
+        self,
+        appointment_service=None,
+        user_behavior_service=None,
+    ):
         # 延迟导入Services避免循环依赖
-        self._appointment_service = None
-        self._user_behavior_service = None
+        self._appointment_service = appointment_service
+        self._user_behavior_service = user_behavior_service
     
     @property
     def appointment_service(self):

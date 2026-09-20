@@ -12,8 +12,16 @@ from services.text_embedding import find_best_match_indices
 class TechnicianFinder:
     """技师查找器"""
     
-    def __init__(self):
-        pass
+    def __init__(self, appointment_service=None):
+        self._appointment_service = appointment_service
+
+    @property
+    def appointment_service(self):
+        if self._appointment_service is None:
+            from services.appointment_service import AppointmentService
+
+            self._appointment_service = AppointmentService()
+        return self._appointment_service
     
     def parse_time_and_duration(self, start_time_str: str, duration_str: str) -> tuple:
         """解析预约时间和时长"""
@@ -42,9 +50,7 @@ class TechnicianFinder:
     def find_specific_technician(self, technician_name: str, start_time: datetime, 
                                end_time: datetime, yield_func: Optional[Callable] = None) -> Optional[Dict]:
         """查找指定技师的可用性"""
-        # 通过Services层访问数据库
-        from services.appointment_service import AppointmentService
-        appointment_service = AppointmentService()
+        appointment_service = self.appointment_service
         
         if yield_func:
             yield_func(f"[THOUGHT][预约机器人] 用户指定了工程师：{technician_name}，正在查询人员信息...\n")
@@ -71,9 +77,7 @@ class TechnicianFinder:
                                         start_time: datetime, end_time: datetime, 
                                         yield_func: Optional[Callable] = None) -> Optional[Dict]:
         """根据目标技师的专长查找相似且可用的技师"""
-        # 通过Services层访问数据库
-        from services.appointment_service import AppointmentService
-        appointment_service = AppointmentService()
+        appointment_service = self.appointment_service
         
         if yield_func:
             yield_func(f"[THOUGHT][预约机器人] 正在根据{target_technician['name']}的技能查找替代工程师...\n")
@@ -148,9 +152,7 @@ class TechnicianFinder:
                                 start_time: datetime, end_time: datetime, 
                                 preference: str, gender: str = None, yield_func: Optional[Callable] = None) -> Optional[Dict]:
         """在技师列表中查找可用技师"""
-        # 通过Services层访问数据库
-        from services.appointment_service import AppointmentService
-        appointment_service = AppointmentService()
+        appointment_service = self.appointment_service
         
         if yield_func:
             yield_func("[THOUGHT][预约机器人] 正在查找空闲工程师...\n")
@@ -179,9 +181,7 @@ class TechnicianFinder:
     def find_technician_with_thought(self, appointment_history: Dict[str, Any], 
                                    yield_func: Optional[Callable] = None) -> Optional[Dict]:
         """带思考提示的技师检索流程"""
-        # 通过Services层访问数据库
-        from services.appointment_service import AppointmentService
-        appointment_service = AppointmentService()
+        appointment_service = self.appointment_service
         
         preference = appointment_history.get("preference")
         gender = appointment_history.get("gender")

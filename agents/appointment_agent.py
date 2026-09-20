@@ -37,6 +37,7 @@ class AppointmentAgent:
         decision_gateway=None,
         llm=None,
         appointment_database=None,
+        technician_finder=None,
     ):
         # 基础设置
         self.session_id = session_id or str(uuid.uuid4())
@@ -58,7 +59,11 @@ class AppointmentAgent:
         
         # 初始化组件
         self.input_parser = InputParser(self.llm)
-        self.technician_finder = TechnicianFinder()
+        self.technician_finder = (
+            technician_finder
+            if technician_finder is not None
+            else TechnicianFinder()
+        )
         self.message_builder = MessageBuilder()
         self.appointment_database = (
             appointment_database
