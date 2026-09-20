@@ -178,3 +178,21 @@ def test_confirmation_does_not_record_completion_when_eligibility_changed(
         "demo", "user-a", entity_refs=["JP20260919002"]
     )
     assert "超过七日退货期限" in "".join(confirmed)
+
+
+def test_switching_to_another_task_invalidates_persisted_pending_action(tmp_path):
+    agent, service, memory = _build(tmp_path)
+    _collect(agent, "申请退货 JP20260919002，原因是商品破损")
+
+    _collect(agent, "查询订单 JP20260919001 的物流")
+    recreated = OrderAfterSalesAgent(
+        "session-a",
+        service,
+        "demo",
+        "user-a",
+        memory_manager=memory,
+        context_engine=ContextEngine(memory),
+    )
+
+    assert memory.get_working("demo", "user-a", "session-a") is None
+    assert recreated.has_pending_action is False

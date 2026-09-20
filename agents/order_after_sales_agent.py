@@ -184,6 +184,7 @@ class OrderAfterSalesAgent:
         if self.pending_action is not None:
             previous = self.pending_action
             self.pending_action = None
+            self._clear_working_state()
             if reason_update and order_match is None:
                 self.return_draft = ReturnDraft(
                     order_id=previous.arguments["order_id"],
@@ -202,6 +203,7 @@ class OrderAfterSalesAgent:
             mode = "logistics"
             reason = ""
             self.return_draft = None
+            self._clear_working_state()
         elif (
             "申请退货" in normalized
             or "我要退货" in normalized
@@ -233,10 +235,12 @@ class OrderAfterSalesAgent:
             mode = "eligibility"
             reason = ""
             self.return_draft = None
+            self._clear_working_state()
         else:
             mode = "order"
             reason = ""
             self.return_draft = None
+            self._clear_working_state()
 
         turn = self._turn(normalized)
         context = self._context(turn)
