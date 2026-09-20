@@ -11,7 +11,9 @@ class EvalCase(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     case_id: str = Field(min_length=1, max_length=128)
-    dataset_version: str = Field(pattern=r"^[a-z0-9._-]+-smoke-v\d+$")
+    dataset_version: str = Field(
+        pattern=r"^[a-z0-9._-]+-(?:smoke|golden)-v\d+$"
+    )
     category: str = Field(min_length=1, max_length=64)
     turns: tuple[str, ...] = Field(min_length=1)
     expected_tools: tuple[str, ...] = ()
