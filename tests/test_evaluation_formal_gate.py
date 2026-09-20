@@ -22,6 +22,8 @@ def _case(case_id: str, category: str, *, turn: str | None = None) -> EvalCase:
         dataset_version="ecommerce-agent-golden-v1",
         category=category,
         turns=(turn or f"fixture-{case_id}",),
+        review_status="approved",
+        source_ref=f"mock-fixture:{category}",
     )
 
 
@@ -118,3 +120,16 @@ def test_formal_gate_rejects_duplicate_ids_and_unpinned_versions():
         "unpinned_tool_fixture_version",
         "unpinned_code_revision",
     }.issubset(assessment.errors)
+
+
+def test_formal_gate_rejects_draft_case_and_missing_source_reference():
+    cases = list(_formal_cases())
+    cases[0] = cases[0].model_copy(
+        update={"review_status": "draft", "source_ref": None}
+    )
+
+    assessment = FormalEvaluationGate().assess(tuple(cases), _manifest())
+
+    assert assessment.eligible is False
+    assert "case_not_approved:knowledge-000" in assessment.errors
+    assert "missing_source_ref:knowledge-000" in assessment.errors

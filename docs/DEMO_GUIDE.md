@@ -188,7 +188,8 @@ Set-Location 'D:\superhermes agentic\JakePilot'
 
 `--formal` 是失败关闭门禁，不是把 Smoke 改名成正式评测。它要求数据集版本为
 `*-golden-vN`、总量不少于 200 条、七类业务配额完整、固定模型/Prompt/工具桩版本，
-并声明每条 Case 重复运行 3 次。直接对仓库内 Smoke Set 执行会返回
+每条 Case 具有可追溯 `source_ref` 且经过人工批准，并声明每条 Case 重复运行 3 次。
+模板扩展或自动生成的 Case 只能标记为 `draft`，不能通过正式门禁。直接对仓库内 Smoke Set 执行会返回
 `formal_gate_rejected`，且不会生成报告：
 
 ```powershell

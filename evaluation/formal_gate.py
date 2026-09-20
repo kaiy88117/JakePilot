@@ -85,6 +85,11 @@ class FormalEvaluationGate:
             actual = counts.get(category, 0)
             if actual < target:
                 errors.append(f"category_quota:{category}:{actual}/{target}")
+        for case in cases:
+            if case.review_status != "approved":
+                errors.append(f"case_not_approved:{case.case_id}")
+            if not case.source_ref:
+                errors.append(f"missing_source_ref:{case.case_id}")
         mismatched_versions = sorted(
             {
                 case.dataset_version

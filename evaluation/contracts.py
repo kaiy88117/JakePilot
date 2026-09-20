@@ -16,6 +16,9 @@ class EvalCase(BaseModel):
     )
     category: str = Field(min_length=1, max_length=64)
     turns: tuple[str, ...] = Field(min_length=1)
+    review_status: Literal["smoke", "draft", "approved"] = "smoke"
+    source_ref: str | None = Field(default=None, min_length=1, max_length=256)
+    expected_facts: tuple[str, ...] = ()
     expected_tools: tuple[str, ...] = ()
     forbidden_tools: tuple[str, ...] = ()
     expected_terminal_status: Literal[
@@ -27,14 +30,21 @@ class EvalCase(BaseModel):
     recreate_between_turns: bool = False
     max_steps: int = Field(default=6, ge=1, le=6)
 
-    @field_validator("turns", "expected_tools", "forbidden_tools", "answer_contains")
+    @field_validator(
+        "turns",
+        "expected_tools",
+        "forbidden_tools",
+        "answer_contains",
+        "expected_facts",
+    )
     @classmethod
     def reject_duplicates_or_blanks(cls, value: tuple[str, ...], info):
         normalized = tuple(item.strip() for item in value)
         if any(not item for item in normalized):
             raise ValueError(f"{info.field_name} contains a blank value")
         if (
-            info.field_name in {"forbidden_tools", "answer_contains"}
+            info.field_name
+            in {"forbidden_tools", "answer_contains", "expected_facts"}
             and len(set(normalized)) != len(normalized)
         ):
             raise ValueError(f"{info.field_name} contains duplicate values")
