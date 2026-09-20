@@ -213,7 +213,9 @@ const handoff = describeRuntimeEvent('handoff_created', {{
   ticket_no: 'HO-0001', reason_code: 'user_requested', status: 'open',
   summary: 'private', raw_message: 'secret'
 }});
-process.stdout.write(JSON.stringify(handoff));
+const started = describeRuntimeEvent('tool_started', {{tool: 'handoff.create'}});
+const finished = describeRuntimeEvent('tool_finished', {{tool: 'handoff.create', status: 'handed_off'}});
+process.stdout.write(JSON.stringify({{ handoff, started, finished }}));
 """
     result = subprocess.run(
         ["node", "-e", node_program],
@@ -224,8 +226,15 @@ process.stdout.write(JSON.stringify(handoff));
     )
 
     assert json.loads(result.stdout) == {
-        "title": "已转人工客服",
-        "detail": "工单号 HO-0001",
+        "handoff": {
+            "title": "已转人工客服",
+            "detail": "工单号 HO-0001",
+        },
+        "started": {"title": "调用业务工具", "detail": "创建人工接管"},
+        "finished": {
+            "title": "工具执行完成",
+            "detail": "创建人工接管 · 已接管",
+        },
     }
 
 

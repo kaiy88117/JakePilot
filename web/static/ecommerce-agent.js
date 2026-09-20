@@ -75,13 +75,15 @@
             "order.get": "查询订单",
             "logistics.get": "查询物流",
             "return.check": "核验退货条件",
-            "return.create": "提交退货申请"
+            "return.create": "提交退货申请",
+            "handoff.create": "创建人工接管"
         };
         const statusLabels = {
             succeeded: "成功",
             failed: "失败",
             not_found: "未找到",
-            confirmation_required: "等待确认"
+            confirmation_required: "等待确认",
+            handed_off: "已接管"
         };
         const toolLabel = toolLabels[payload.tool] || "业务工具";
         if (event === "tool_started") {
