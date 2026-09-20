@@ -35,6 +35,8 @@ class AppointmentAgent:
         session_id=None,
         unrelated_callback=None,
         decision_gateway=None,
+        llm=None,
+        appointment_database=None,
     ):
         # 基础设置
         self.session_id = session_id or str(uuid.uuid4())
@@ -52,13 +54,17 @@ class AppointmentAgent:
             ) = self._guard_injected_gateway(decision_gateway)
         
         # 初始化LLM
-        self.llm = self._initialize_llm()
+        self.llm = llm if llm is not None else self._initialize_llm()
         
         # 初始化组件
         self.input_parser = InputParser(self.llm)
         self.technician_finder = TechnicianFinder()
         self.message_builder = MessageBuilder()
-        self.appointment_database = AppointmentDatabase()
+        self.appointment_database = (
+            appointment_database
+            if appointment_database is not None
+            else AppointmentDatabase()
+        )
         self.appointment_processor = AppointmentProcessor(
             self.input_parser, 
             self.technician_finder,

@@ -28,6 +28,8 @@ class TaskClassificationAgent:
         consultant_agent,
         order_after_sales_agent=None,
         human_handoff_agent=None,
+        *,
+        llm=None,
     ):
         # 基础设置
         self.appointment_agent = appointment_agent
@@ -36,7 +38,7 @@ class TaskClassificationAgent:
         self.human_handoff_agent = human_handoff_agent
         
         # 初始化LLM
-        self.llm = self._initialize_llm()
+        self.llm = llm if llm is not None else self._initialize_llm()
         
         # 初始化组件
         self.state_manager = StateManager(SharedState())

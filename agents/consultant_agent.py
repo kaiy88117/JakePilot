@@ -9,6 +9,9 @@ from .consultant import (
 )
 
 
+_USE_ENV_KNOWLEDGE_CLIENT = object()
+
+
 class ConsultantAgent:
     """
     咨询机器人主控制器
@@ -19,24 +22,39 @@ class ConsultantAgent:
     3. 协调整个咨询流程
     """
     
-    def __init__(self, session_id=None):
+    def __init__(
+        self,
+        session_id=None,
+        *,
+        llm=None,
+        knowledge_client=_USE_ENV_KNOWLEDGE_CLIENT,
+        knowledge_retriever=None,
+    ):
         # 基础设置
         self.session_id = session_id or str(uuid.uuid4())
         self.shared_state = None
         self.unrelated_callback = None
         
         # 初始化LLM
-        self.llm = self._initialize_llm()
+        self.llm = llm if llm is not None else self._initialize_llm()
         
         # 初始化组件
-        self.knowledge_retriever = KnowledgeRetriever()
+        self.knowledge_retriever = (
+            knowledge_retriever
+            if knowledge_retriever is not None
+            else KnowledgeRetriever()
+        )
         self.consultation_classifier = ConsultationClassifier(self.llm)
         self.response_generator = ResponseGenerator(self.llm)
         self.consultation_processor = ConsultationProcessor(
             self.knowledge_retriever,
             self.consultation_classifier,
             self.response_generator,
-            knowledge_client=HermesRagClient.from_env(),
+            knowledge_client=(
+                HermesRagClient.from_env()
+                if knowledge_client is _USE_ENV_KNOWLEDGE_CLIENT
+                else knowledge_client
+            ),
         )
 
     def _initialize_llm(self):
