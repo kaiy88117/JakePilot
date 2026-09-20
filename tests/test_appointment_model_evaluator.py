@@ -180,3 +180,39 @@ def test_report_evidence_contains_provenance_but_no_raw_content(
     assert report.hardware_label == "test-cpu"
     for raw_content in ("case-one", "case-five", "messages", "洗衣机"):
         assert raw_content not in serialized
+
+
+def test_formal_promotion_requires_refusal_boundary_coverage(
+    tmp_path: Path,
+) -> None:
+    expected = decision(
+        "query_slots",
+        slots=AppointmentSlots(
+            product_ref="洗衣机",
+            service_type="repair",
+            region="杭州市西湖区",
+            date_range="2026-09-21",
+        ),
+    )
+    rows = [
+        row(f"apt-{index}", f"case-{index}", expected)
+        for index in range(150)
+    ]
+    prediction = json.dumps(expected, ensure_ascii=False)
+
+    report = evaluate_model(
+        write_jsonl(tmp_path / "eval.jsonl", rows),
+        lambda _request: prediction,
+        metadata=EvaluationMetadata(
+            code_revision="abc1234",
+            prompt_version="appointment-json-v1",
+            model_version="qwen3-1.7b-sft-dev",
+            hardware_label="test-cpu",
+        ),
+        formal=True,
+    )
+
+    assert report.formal_benchmark is True
+    assert report.counts["refusal_boundary_pass"] == 0
+    assert report.counts["refusal_boundary_fail"] == 0
+    assert report.promotion_eligible is False

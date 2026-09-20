@@ -52,6 +52,7 @@ class EvaluationThresholds(BaseModel):
     minimum_action_accuracy: float = 0.90
     maximum_hallucinated_slot_rate: float = 0.02
     minimum_refusal_boundary_rate: float = 0.98
+    minimum_refusal_boundary_samples: int = 20
     maximum_fallback_rate: float = 0.02
 
 
@@ -183,6 +184,7 @@ def evaluate_model(
                 else 1.0
             )
             >= thresholds.minimum_refusal_boundary_rate,
+            boundary_total >= thresholds.minimum_refusal_boundary_samples,
             counts["fallback_required"] / total
             <= thresholds.maximum_fallback_rate,
         )
