@@ -17,16 +17,16 @@ CATEGORY_COUNTS = {
 }
 
 
-def _metric(rate: float) -> dict[str, int | float]:
+def _metric(rate: float, *, total: int = 200) -> dict[str, int | float]:
     return {
-        "passed": round(rate * 200),
-        "total": 200,
+        "passed": round(rate * total),
+        "total": total,
         "rate": rate,
     }
 
 
 def _report(variant: str, *, digest: str = "a" * 64) -> dict:
-    summary = {
+    run_summary = {
         "end_to_end_task_success": _metric(0.88 if variant == "jakepilot" else 0.82),
         "tool_selection_accuracy": _metric(0.92 if variant == "jakepilot" else 0.86),
         "argument_exact_match": _metric(0.87 if variant == "jakepilot" else 0.82),
@@ -35,6 +35,15 @@ def _report(variant: str, *, digest: str = "a" * 64) -> dict:
         "duplicate_write_rate": _metric(0.0),
         "trace_completeness": _metric(0.99),
         "final_delivery_success": _metric(0.995),
+    }
+    run_summaries = [deepcopy(run_summary) for _ in range(3)]
+    summary = {
+        name: {
+            "passed": values["passed"] * 3,
+            "total": values["total"] * 3,
+            "rate": values["rate"],
+        }
+        for name, values in run_summary.items()
     }
     return {
         "schema_version": "2.0",
@@ -60,6 +69,7 @@ def _report(variant: str, *, digest: str = "a" * 64) -> dict:
             "prompt_version": f"{variant}-prompt-v1",
             "tool_fixture_version": "ecommerce-mock-v2",
         },
+        "run_summaries": run_summaries,
         "summary": summary,
     }
 
@@ -94,9 +104,14 @@ def test_release_gate_rejects_mismatched_dataset_and_missing_metric():
 def test_release_gate_rejects_threshold_failure_and_material_regression():
     baseline = _report("baseline")
     candidate = deepcopy(_report("jakepilot"))
-    baseline["summary"]["tool_selection_accuracy"] = _metric(0.97)
-    candidate["summary"]["tool_selection_accuracy"] = _metric(0.91)
-    candidate["summary"]["unauthorized_write_rate"] = _metric(0.01)
+    for run_summary in baseline["run_summaries"]:
+        run_summary["tool_selection_accuracy"] = _metric(0.97)
+    baseline["summary"]["tool_selection_accuracy"] = _metric(0.97, total=600)
+    for run_summary in candidate["run_summaries"]:
+        run_summary["tool_selection_accuracy"] = _metric(0.91)
+        run_summary["unauthorized_write_rate"] = _metric(0.01)
+    candidate["summary"]["tool_selection_accuracy"] = _metric(0.91, total=600)
+    candidate["summary"]["unauthorized_write_rate"] = _metric(0.01, total=600)
 
     assessment = FormalReleaseGate().assess(
         baseline=baseline,
@@ -106,6 +121,39 @@ def test_release_gate_rejects_threshold_failure_and_material_regression():
     assert assessment.eligible is False
     assert "threshold_failed:unauthorized_write_rate:0.01<=0.0" in assessment.errors
     assert "regression:tool_selection_accuracy:-0.06" in assessment.errors
+
+
+def test_release_gate_rejects_claimed_repeats_without_three_run_summaries():
+    candidate = _report("jakepilot")
+    candidate["run_summaries"] = candidate["run_summaries"][:2]
+
+    assessment = FormalReleaseGate().assess(
+        baseline=_report("baseline"),
+        candidate=candidate,
+    )
+
+    assert assessment.eligible is False
+    assert "candidate:run_summaries_must_have_3_runs" in assessment.errors
+
+
+def test_release_gate_rejects_aggregate_not_derived_from_runs():
+    candidate = _report("jakepilot")
+    candidate["summary"]["end_to_end_task_success"]["passed"] += 1
+    candidate["summary"]["end_to_end_task_success"]["rate"] = round(
+        candidate["summary"]["end_to_end_task_success"]["passed"] / 600,
+        6,
+    )
+
+    assessment = FormalReleaseGate().assess(
+        baseline=_report("baseline"),
+        candidate=candidate,
+    )
+
+    assert assessment.eligible is False
+    assert (
+        "candidate:aggregate_mismatch:end_to_end_task_success"
+        in assessment.errors
+    )
 
 
 def test_release_gate_cli_returns_machine_readable_pass_result(tmp_path):

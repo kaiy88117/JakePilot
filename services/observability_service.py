@@ -154,6 +154,10 @@ class ObservabilityService:
             "created_at": str(payload["created_at"]),
             "case_count": int(payload["case_count"]),
             "passed_cases": int(task_success["passed"]),
+            "result_label": (
+                f"{int(task_success['passed'])}/{int(task_success['total'])} "
+                + ("次运行通过" if formal_benchmark else "Case 通过")
+            ),
             "metrics": metrics,
         }
 

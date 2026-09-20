@@ -182,10 +182,20 @@ def test_observability_accepts_only_gate_eligible_formal_report(tmp_path):
             "prompt_version": "planner-v3",
             "tool_fixture_version": "ecommerce-mock-v2",
         },
+        "run_summaries": [
+            {
+                "end_to_end_task_success": {
+                    "passed": 170,
+                    "total": 200,
+                    "rate": 0.85,
+                }
+            }
+            for _ in range(3)
+        ],
         "summary": {
             "end_to_end_task_success": {
-                "passed": 170,
-                "total": 200,
+                "passed": 510,
+                "total": 600,
                 "rate": 0.85,
             }
         },
@@ -207,6 +217,7 @@ def test_observability_accepts_only_gate_eligible_formal_report(tmp_path):
     assert evaluation["gate_label"] == "正式 Golden Set"
     assert evaluation["repeat_count"] == 3
     assert evaluation["dataset_digest"] == "aaaaaaaaaaaa"
+    assert evaluation["result_label"] == "510/600 次运行通过"
 
 
 def test_observability_rejects_formal_report_with_inconsistent_gate_digest():
@@ -240,10 +251,20 @@ def test_observability_rejects_formal_report_with_inconsistent_gate_digest():
             "prompt_version": "planner-v3",
             "tool_fixture_version": "ecommerce-mock-v2",
         },
+        "run_summaries": [
+            {
+                "end_to_end_task_success": {
+                    "passed": 170,
+                    "total": 200,
+                    "rate": 0.85,
+                }
+            }
+            for _ in range(3)
+        ],
         "summary": {
             "end_to_end_task_success": {
-                "passed": 170,
-                "total": 200,
+                "passed": 510,
+                "total": 600,
                 "rate": 0.85,
             }
         },
@@ -417,6 +438,7 @@ def test_observability_page_labels_gate_eligible_formal_results():
                 "gate_label": "正式 Golden Set",
                 "passed_cases": 170,
                 "case_count": 200,
+                "result_label": "510/600 次运行通过",
                 "dataset_version": "ecommerce-agent-golden-v1",
                 "dataset_digest": "aaaaaaaaaaaa",
                 "repeat_count": 3,
@@ -440,6 +462,7 @@ def test_observability_page_labels_gate_eligible_formal_results():
     visible = " ".join(page.text)
 
     assert "正式 Golden Set" in visible
+    assert "510/600 次运行通过" in visible
     assert "重复次数 3" in visible
     assert "数据摘要 aaaaaaaaaaaa" in visible
     assert "不是正式 Golden Set 指标" not in visible

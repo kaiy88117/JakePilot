@@ -43,6 +43,8 @@ def formal_report_errors(
     formal_gate = payload.get("formal_gate") or {}
     run_config = payload.get("run_config") or {}
     gate_counts = formal_gate.get("category_counts") or {}
+    run_summaries = payload.get("run_summaries")
+    aggregate_summary = payload.get("summary")
 
     if payload.get("suite_kind") != "golden":
         errors.append("suite_kind_not_golden")
@@ -50,6 +52,18 @@ def formal_report_errors(
         errors.append("formal_benchmark_not_true")
     if _safe_int(payload.get("repeat_count")) != 3:
         errors.append("repeat_count_must_equal_3")
+    if not isinstance(run_summaries, list) or len(run_summaries) != 3:
+        errors.append("run_summaries_must_have_3_runs")
+    elif not isinstance(aggregate_summary, dict):
+        errors.append("invalid_aggregate_summary")
+    else:
+        errors.extend(
+            _run_summary_errors(
+                run_summaries,
+                aggregate_summary,
+                case_count=case_count,
+            )
+        )
     if case_count < 200:
         errors.append("case_count_below_200")
     if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
@@ -149,6 +163,68 @@ def _metric_rate(metric: Any) -> float | None:
     if not 0.0 <= normalized <= 1.0:
         return None
     return normalized
+
+
+def _run_summary_errors(
+    run_summaries: list[Any],
+    aggregate_summary: dict[str, Any],
+    *,
+    case_count: int,
+) -> tuple[str, ...]:
+    errors: list[str] = []
+    if any(not isinstance(item, dict) for item in run_summaries):
+        return ("invalid_run_summary",)
+
+    metric_names = set(aggregate_summary)
+    for run_index, run_summary in enumerate(run_summaries, start=1):
+        metric_names.update(run_summary)
+        end_to_end = _metric_counts(
+            run_summary.get("end_to_end_task_success")
+        )
+        if end_to_end is None or end_to_end[1] != case_count:
+            errors.append(f"run_case_count_mismatch:{run_index}")
+
+    for metric_name in sorted(metric_names):
+        aggregate = _metric_counts(aggregate_summary.get(metric_name))
+        run_metrics = [
+            _metric_counts(run_summary.get(metric_name))
+            for run_summary in run_summaries
+        ]
+        if aggregate is None:
+            errors.append(f"invalid_aggregate_metric:{metric_name}")
+            continue
+        if any(item is None for item in run_metrics):
+            errors.append(f"run_missing_metric:{metric_name}")
+            continue
+        total_passed = sum(item[0] for item in run_metrics if item is not None)
+        total_count = sum(item[1] for item in run_metrics if item is not None)
+        if aggregate[0] != total_passed or aggregate[1] != total_count:
+            errors.append(f"aggregate_mismatch:{metric_name}")
+    return tuple(errors)
+
+
+def _metric_counts(metric: Any) -> tuple[int, int, float] | None:
+    if not isinstance(metric, dict):
+        return None
+    passed = metric.get("passed")
+    total = metric.get("total")
+    rate = metric.get("rate")
+    if (
+        isinstance(passed, bool)
+        or isinstance(total, bool)
+        or isinstance(rate, bool)
+        or not isinstance(passed, int)
+        or not isinstance(total, int)
+        or not isinstance(rate, (int, float))
+        or total <= 0
+        or passed < 0
+        or passed > total
+    ):
+        return None
+    normalized_rate = float(rate)
+    if abs(normalized_rate - passed / total) > 0.000001:
+        return None
+    return passed, total, normalized_rate
 
 
 def _safe_int(value: Any) -> int:

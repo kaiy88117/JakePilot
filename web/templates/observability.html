@@ -44,7 +44,7 @@
                 <div class="section-heading">
                     <div><p class="section-kicker">Evidence report</p><h2 id="eval-title">最新离线评测</h2></div>
                     {% if snapshot.evaluation.available %}
-                    <span class="result-badge">{{ snapshot.evaluation.passed_cases }}/{{ snapshot.evaluation.case_count }} Case 通过</span>
+                    <span class="result-badge">{{ snapshot.evaluation.result_label }}</span>
                     {% else %}
                     <span class="result-badge waiting">等待运行</span>
                     {% endif %}
