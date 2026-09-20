@@ -26,6 +26,18 @@ def _collect(source, turn_id: str) -> list[tuple[str, dict]]:
     return asyncio.run(collect())
 
 
+def _collect_with_terminal(source, turn_id: str, on_terminal):
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in iter_sse_events(
+                source, turn_id, on_terminal=on_terminal
+            )
+        ]
+
+    return asyncio.run(collect())
+
+
 def test_converts_route_and_reply_without_exposing_thought():
     events = _collect(
         _tokens(
@@ -88,6 +100,63 @@ def test_error_ends_turn_as_failed():
     assert events[-1][1]["message"] == "服务处理失败，请稍后重试"
     assert "SYNTHETIC_PRIVATE_DIAGNOSTIC" not in json.dumps(events)
     assert all(name != "turn_ended" for name, _ in events)
+
+
+def test_completed_stream_calls_terminal_hook_with_bounded_public_answer():
+    terminal = []
+    long_tail = "a" * 2100
+
+    events = _collect_with_terminal(
+        _tokens("[REPLY][咨询机器人]已完成", long_tail),
+        "turn-terminal",
+        lambda status, result: terminal.append((status, result)),
+    )
+
+    assert events[-1] == (
+        "turn_ended",
+        {"turn_id": "turn-terminal", "status": "completed"},
+    )
+    assert terminal == [("completed", ("已完成" + long_tail)[:2000])]
+
+
+def test_failed_and_needs_input_streams_report_truthful_terminal_status():
+    failed = []
+    needs_input = []
+
+    failed_events = _collect_with_terminal(
+        _tokens("[ERROR]private"),
+        "turn-failed-hook",
+        lambda status, result: failed.append((status, result)),
+    )
+    needs_input_events = _collect_with_terminal(
+        _tokens(
+            '[EVENT]{"type":"input_required","data":{"field":"reason","summary":"请补充退货原因"}}',
+            "[REPLY][订单售后 Agent]请补充退货原因。",
+        ),
+        "turn-needs-input-hook",
+        lambda status, result: needs_input.append((status, result)),
+    )
+
+    assert failed_events[-1][0] == "turn_failed"
+    assert failed == [("failed", "")]
+    assert needs_input_events[-1][1]["status"] == "needs_input"
+    assert needs_input == [("needs_input", "请补充退货原因。")]
+
+
+def test_terminal_hook_failure_never_changes_public_stream():
+    def failing_hook(status, result):
+        raise RuntimeError("private callback failure")
+
+    events = _collect_with_terminal(
+        _tokens("[REPLY][咨询机器人]公开回答"),
+        "turn-hook-failure",
+        failing_hook,
+    )
+
+    assert events[-1] == (
+        "turn_ended",
+        {"turn_id": "turn-hook-failure", "status": "completed"},
+    )
 
 
 def test_combined_thought_and_reply_preserves_public_answer():
@@ -201,6 +270,82 @@ def test_build_agent_event_stream_forwards_session_id(monkeypatch):
         "turn_id": "turn-session",
     }
     assert frames[-1][0] == "turn_ended"
+
+
+def test_build_agent_event_stream_submits_server_scoped_completion():
+    from web.routes import build_agent_event_stream
+
+    class RecordingDispatcher:
+        def __init__(self):
+            self.items = []
+
+        def submit(self, completion):
+            self.items.append(completion)
+            return True
+
+    dispatcher = RecordingDispatcher()
+
+    async def fake_processor(message: str):
+        yield "[THOUGHT][归类机器人] 已识别为订单售后任务，转交订单售后 Agent 处理。"
+        yield "[REPLY][订单售后 Agent]退货申请已提交，申请编号为 AS-001。"
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "订单 JP20260920001 退货已确认",
+                turn_id="turn-completion",
+                session_id="session-a",
+                processor=fake_processor,
+                memory_dispatcher=dispatcher,
+            )
+        ]
+
+    frames = asyncio.run(collect())
+
+    assert frames[-1][1]["status"] == "completed"
+    assert len(dispatcher.items) == 1
+    completion = dispatcher.items[0]
+    assert completion.turn_id == "turn-completion"
+    assert completion.session_id == "session-a"
+    assert completion.tenant_id == "demo"
+    assert completion.user_id == "user-a"
+    assert completion.route == "order_after_sales"
+    assert completion.public_result == "退货申请已提交，申请编号为 AS-001。"
+
+
+def test_active_order_flow_is_inferred_from_safe_tool_event():
+    from web.routes import build_agent_event_stream
+
+    class RecordingDispatcher:
+        def __init__(self):
+            self.items = []
+
+        def submit(self, completion):
+            self.items.append(completion)
+            return True
+
+    dispatcher = RecordingDispatcher()
+
+    async def fake_processor(message: str):
+        yield '[EVENT]{"type":"tool_finished","data":{"tool":"return.create","step":2,"status":"succeeded"}}'
+        yield "[REPLY][订单售后 Agent]退货申请已提交，申请编号为 AS-002。"
+
+    async def collect():
+        return [
+            _decode(frame)
+            async for frame in build_agent_event_stream(
+                "确认提交",
+                turn_id="turn-active-order",
+                session_id="session-a",
+                processor=fake_processor,
+                memory_dispatcher=dispatcher,
+            )
+        ]
+
+    asyncio.run(collect())
+
+    assert dispatcher.items[0].route == "order_after_sales"
 
 
 def test_build_agent_event_stream_converts_processor_startup_failure():

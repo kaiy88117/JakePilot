@@ -12,6 +12,10 @@ from agents.order_after_sales_agent import OrderAfterSalesAgent
 from config.database import db_config
 from runtime.context_engine import ContextEngine
 from services.memory_manager import MemoryManager
+from services.memory_consolidator import (
+    MemoryConsolidationDispatcher,
+    MemoryConsolidator,
+)
 from services.order_after_sales_service import OrderAfterSalesService
 from services.handoff_service import HandoffService
 from agents.human_handoff_agent import HumanHandoffAgent
@@ -21,6 +25,7 @@ LEGACY_SESSION_ID = "legacy-default"
 _order_after_sales_service: OrderAfterSalesService | None = None
 _memory_manager: MemoryManager | None = None
 _handoff_service: HandoffService | None = None
+_memory_dispatcher: MemoryConsolidationDispatcher | None = None
 
 
 def _get_order_after_sales_service() -> OrderAfterSalesService:
@@ -44,6 +49,15 @@ def _get_handoff_service() -> HandoffService:
     if _handoff_service is None:
         _handoff_service = HandoffService(db_config.connection_string)
     return _handoff_service
+
+
+def _get_memory_dispatcher() -> MemoryConsolidationDispatcher:
+    global _memory_dispatcher
+    if _memory_dispatcher is None:
+        _memory_dispatcher = MemoryConsolidationDispatcher(
+            MemoryConsolidator(_get_memory_manager())
+        )
+    return _memory_dispatcher
 
 
 class SessionRegistryFull(RuntimeError):

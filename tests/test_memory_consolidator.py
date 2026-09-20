@@ -1,7 +1,11 @@
+import asyncio
+import threading
+
 import pytest
 
 from services.memory_consolidator import (
     MemoryCandidate,
+    MemoryConsolidationDispatcher,
     MemoryConsolidator,
     RuleBasedMemoryCandidateExtractor,
     TurnCompletion,
@@ -184,3 +188,49 @@ def test_same_turn_profile_candidate_does_not_create_a_new_version(tmp_path):
     assert second.written == 0
     assert second.skipped == 1
     assert len(manager.recall_profiles("demo", "user-a")) == 1
+
+
+def test_dispatcher_runs_consolidation_and_can_be_drained():
+    class RecordingConsolidator:
+        def __init__(self):
+            self.items = []
+
+        def consolidate(self, completion):
+            self.items.append(completion)
+
+    consolidator = RecordingConsolidator()
+    dispatcher = MemoryConsolidationDispatcher(consolidator)
+    completion = completion_fixture()
+
+    async def run():
+        assert dispatcher.submit(completion) is True
+        await dispatcher.drain()
+
+    asyncio.run(run())
+    assert consolidator.items == [completion]
+
+
+def test_dispatcher_is_bounded_and_does_not_raise_worker_failure():
+    class BlockingConsolidator:
+        def __init__(self):
+            self.started = threading.Event()
+            self.release = threading.Event()
+
+        def consolidate(self, completion):
+            self.started.set()
+            self.release.wait(timeout=2)
+            raise RuntimeError("private worker failure")
+
+    consolidator = BlockingConsolidator()
+    dispatcher = MemoryConsolidationDispatcher(consolidator, max_pending=1)
+
+    async def run():
+        assert dispatcher.submit(completion_fixture(turn_id="turn-a")) is True
+        started = await asyncio.to_thread(consolidator.started.wait, 1)
+        assert started is True
+        assert dispatcher.submit(completion_fixture(turn_id="turn-b")) is False
+        consolidator.release.set()
+        await dispatcher.drain()
+        assert dispatcher.pending_count == 0
+
+    asyncio.run(run())

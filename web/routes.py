@@ -19,6 +19,10 @@ from api.stream_protocol import iter_sse_events
 from config.database import db_config
 from services.turn_journal import TurnJournal
 from services.observability_service import ObservabilityService
+from services.memory_consolidator import (
+    MemoryConsolidationDispatcher,
+    TurnCompletion,
+)
 import logging
 
 # 创建logger实例
@@ -59,6 +63,31 @@ def _decode_public_frame(frame: str) -> tuple[str, dict] | None:
         return None
     return (event_type, payload) if isinstance(payload, dict) else None
 
+
+def _route_from_public_event(
+    event_type: str, payload: dict, current: str
+) -> str:
+    if event_type == "route_selected":
+        route = payload.get("route")
+        if route in {
+            "knowledge_consultation",
+            "order_after_sales",
+            "service_appointment",
+        }:
+            return route
+    if event_type == "handoff_created":
+        return "human_handoff"
+    if event_type == "knowledge_retrieval":
+        return "knowledge_consultation"
+    if event_type == "decision_model_trace":
+        return "service_appointment"
+    tool = str(payload.get("tool", ""))
+    if tool.startswith(("order.", "logistics.", "return.")):
+        return "order_after_sales"
+    if tool.startswith(("appointment.", "service.")):
+        return "service_appointment"
+    return current
+
 class ChatRequest(BaseModel):
     message: str
     state: str | None = None
@@ -91,10 +120,27 @@ async def build_agent_event_stream(
     processor: Callable | None = None,
     session_id: str | None = None,
     turn_journal: TurnJournal | None = None,
+    memory_dispatcher: MemoryConsolidationDispatcher | None = None,
 ) -> AsyncIterator[str]:
     """Build the public event stream without initializing models on import."""
     journal = turn_journal
     journal_session_id = session_id or "legacy-default"
+    selected_route = "unsupported"
+
+    def on_terminal(status: str, public_result: str) -> None:
+        if memory_dispatcher is None:
+            return
+        completion = TurnCompletion(
+            tenant_id="demo",
+            user_id="user-a",
+            session_id=journal_session_id,
+            turn_id=turn_id,
+            status=status,
+            route=selected_route,
+            user_message=message,
+            public_result=public_result,
+        )
+        memory_dispatcher.submit(completion)
     if journal is not None:
         try:
             journal.begin(
@@ -123,9 +169,15 @@ async def build_agent_event_stream(
         tokens = failed_tokens()
 
     try:
-        async for frame in iter_sse_events(tokens, turn_id):
+        async for frame in iter_sse_events(
+            tokens, turn_id, on_terminal=on_terminal
+        ):
+            decoded = _decode_public_frame(frame)
+            if decoded is not None:
+                selected_route = _route_from_public_event(
+                    decoded[0], decoded[1], selected_route
+                )
             if journal is not None:
-                decoded = _decode_public_frame(frame)
                 if decoded is not None:
                     try:
                         journal.observe(turn_id, decoded[0], decoded[1])
@@ -189,12 +241,15 @@ async def chat_stream_endpoint(chat: ChatRequest):
 async def agent_chat_stream_endpoint(chat: ChatRequest):
     """以结构化 SSE 事件返回 Agent 的公开执行状态和回答。"""
     turn_id = f"turn_{uuid.uuid4().hex}"
+    from api.chat_handler import _get_memory_dispatcher
+
     return StreamingResponse(
         build_agent_event_stream(
             chat.message,
             turn_id,
             session_id=chat.session_id,
             turn_journal=_get_turn_journal(),
+            memory_dispatcher=_get_memory_dispatcher(),
         ),
         media_type="text/event-stream",
         headers={

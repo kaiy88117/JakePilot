@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import inspect
 import re
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator, Callable
 
 
 _TAG_PATTERN = re.compile(
@@ -126,7 +127,9 @@ def _runtime_event(
 
 
 async def iter_sse_events(
-    tokens: AsyncIterable[str], turn_id: str
+    tokens: AsyncIterable[str],
+    turn_id: str,
+    on_terminal: Callable[[str, str], object] | None = None,
 ) -> AsyncIterator[str]:
     """Convert tagged legacy output into public, structured turn events.
 
@@ -137,6 +140,26 @@ async def iter_sse_events(
     yield encode_sse("turn_started", {"turn_id": turn_id})
     reply_started = False
     terminal_status = "completed"
+    public_result = ""
+    terminal_notified = False
+
+    def remember_public_answer(fragment: str) -> None:
+        nonlocal public_result
+        if fragment and len(public_result) < 2000:
+            public_result += fragment[: 2000 - len(public_result)]
+
+    async def notify_terminal(status: str) -> None:
+        nonlocal terminal_notified
+        if terminal_notified or on_terminal is None:
+            terminal_notified = True
+            return
+        terminal_notified = True
+        try:
+            result = on_terminal(status, public_result)
+            if inspect.isawaitable(result):
+                await result
+        except Exception:
+            return
 
     try:
         async for raw_token in tokens:
@@ -164,11 +187,13 @@ async def iter_sse_events(
                     elif kind == "REPLY":
                         reply_started = True
                         if section:
+                            remember_public_answer(section)
                             yield encode_sse(
                                 "answer_delta",
                                 {"turn_id": turn_id, "delta": section},
                             )
                     elif kind == "ERROR":
+                        await notify_terminal("failed")
                         yield encode_sse(
                             "turn_failed",
                             {
@@ -181,6 +206,7 @@ async def iter_sse_events(
                 continue
 
             if token.startswith("[ERROR]"):
+                await notify_terminal("failed")
                 yield encode_sse(
                     "turn_failed",
                     {
@@ -195,10 +221,12 @@ async def iter_sse_events(
                 continue
 
             if reply_started and token:
+                remember_public_answer(token)
                 yield encode_sse(
                     "answer_delta", {"turn_id": turn_id, "delta": token}
                 )
     except Exception:
+        await notify_terminal("failed")
         yield encode_sse(
             "turn_failed",
             {
@@ -209,6 +237,7 @@ async def iter_sse_events(
         )
         return
 
+    await notify_terminal(terminal_status)
     yield encode_sse(
         "turn_ended", {"turn_id": turn_id, "status": terminal_status}
     )

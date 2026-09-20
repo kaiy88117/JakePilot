@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.memory_manager import MemoryManager
+
+
+logger = logging.getLogger(__name__)
 
 
 TurnCompletionStatus = Literal[
@@ -348,3 +353,53 @@ class MemoryConsolidator:
             for value in values
             for pattern in _SENSITIVE_PATTERNS
         )
+
+
+class MemoryConsolidationDispatcher:
+    """Bounded fire-and-forget dispatcher for synchronous consolidation."""
+
+    def __init__(
+        self,
+        consolidator: MemoryConsolidator,
+        *,
+        max_pending: int = 100,
+    ) -> None:
+        if max_pending < 1:
+            raise ValueError("max_pending must be positive")
+        self.consolidator = consolidator
+        self.max_pending = max_pending
+        self._tasks: set[asyncio.Task] = set()
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._tasks)
+
+    def submit(self, completion: TurnCompletion) -> bool:
+        if len(self._tasks) >= self.max_pending:
+            return False
+        try:
+            task = asyncio.create_task(
+                asyncio.to_thread(self.consolidator.consolidate, completion)
+            )
+        except RuntimeError:
+            return False
+        self._tasks.add(task)
+        task.add_done_callback(
+            lambda completed: self._finish(completed, completion.turn_id)
+        )
+        return True
+
+    def _finish(self, task: asyncio.Task, turn_id: str) -> None:
+        self._tasks.discard(task)
+        try:
+            task.result()
+        except Exception as exc:
+            logger.warning(
+                "Memory consolidation failed turn_id=%s error_type=%s",
+                turn_id,
+                type(exc).__name__,
+            )
+
+    async def drain(self) -> None:
+        while self._tasks:
+            await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
