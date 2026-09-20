@@ -21,6 +21,10 @@ class MultiDomainEvalRunner:
         self.runners = dict(runners)
 
     def run(self, cases: tuple[EvalCase, ...]) -> SuiteRun:
+        if not cases:
+            raise ValueError("evaluation cases must not be empty")
+        if len({case.case_id for case in cases}) != len(cases):
+            raise ValueError("evaluation case_id values must be unique")
         grouped: dict[str, list[EvalCase]] = defaultdict(list)
         for case in cases:
             grouped[case.category].append(case)

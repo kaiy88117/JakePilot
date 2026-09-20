@@ -123,3 +123,24 @@ def test_multidomain_runner_rejects_runner_that_drops_a_case():
         assert str(exc) == "runner result mismatch for category knowledge"
     else:
         raise AssertionError("partial runner output must fail closed")
+
+
+def test_multidomain_runner_rejects_empty_or_duplicate_case_ids():
+    runner = MultiDomainEvalRunner({"knowledge": FakeCategoryRunner()})
+
+    for cases, expected in (
+        ((), "evaluation cases must not be empty"),
+        (
+            (
+                _case("knowledge-1", "knowledge"),
+                _case("knowledge-1", "knowledge"),
+            ),
+            "evaluation case_id values must be unique",
+        ),
+    ):
+        try:
+            runner.run(cases)
+        except ValueError as exc:
+            assert str(exc) == expected
+        else:
+            raise AssertionError(expected)
