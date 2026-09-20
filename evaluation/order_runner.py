@@ -43,7 +43,16 @@ class SuiteRun:
 
 
 def load_cases(path: str | Path = DEFAULT_CASES_PATH) -> tuple[EvalCase, ...]:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    case_path = Path(path)
+    content = case_path.read_text(encoding="utf-8")
+    if case_path.suffix.lower() == ".jsonl":
+        payload = [
+            json.loads(line)
+            for line in content.splitlines()
+            if line.strip()
+        ]
+    else:
+        payload = json.loads(content)
     if not isinstance(payload, list):
         raise ValueError("evaluation case file must contain a JSON array")
     cases = tuple(EvalCase.model_validate(item) for item in payload)
@@ -69,7 +78,7 @@ class OrderAfterSalesEvalRunner:
             dataset_version=cases[0].dataset_version,
             dataset_digest=dataset_digest(cases),
             case_runs=case_runs,
-            summary=self._summarize(case_runs),
+            summary=summarize_case_runs(case_runs),
         )
 
     def _run_case(self, case: EvalCase) -> CaseRun:
@@ -154,27 +163,37 @@ class OrderAfterSalesEvalRunner:
                 answer_parts.append(token.split("]", 2)[-1])
         return events, "".join(answer_parts), terminal_status
 
-    @staticmethod
-    def _summarize(
-        case_runs: tuple[CaseRun, ...]
-    ) -> dict[str, dict[str, int | float]]:
-        total = len(case_runs)
 
-        def ratio(passed: int) -> dict[str, int | float]:
-            return {
-                "passed": passed,
-                "total": total,
-                "rate": round(passed / total, 6) if total else 0.0,
-            }
 
-        summary = {
-            "end_to_end_task_success": ratio(
-                sum(item.result.passed for item in case_runs)
-            )
+def summarize_case_runs(
+    case_runs: tuple[CaseRun, ...]
+) -> dict[str, dict[str, int | float]]:
+    total = len(case_runs)
+
+    def ratio(passed: int, denominator: int) -> dict[str, int | float]:
+        return {
+            "passed": passed,
+            "total": denominator,
+            "rate": round(passed / denominator, 6) if denominator else 0.0,
         }
-        metric_names = tuple(case_runs[0].result.metrics) if case_runs else ()
-        for name in metric_names:
-            summary[name] = ratio(
-                sum(item.result.metrics[name] for item in case_runs)
-            )
-        return summary
+
+    summary = {
+        "end_to_end_task_success": ratio(
+            sum(item.result.passed for item in case_runs), total
+        )
+    }
+    metric_names = sorted(
+        {
+            name
+            for item in case_runs
+            for name in item.result.metrics
+        }
+    )
+    for name in metric_names:
+        applicable = [
+            item.result.metrics[name]
+            for item in case_runs
+            if name in item.result.metrics
+        ]
+        summary[name] = ratio(sum(applicable), len(applicable))
+    return summary

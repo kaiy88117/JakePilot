@@ -66,3 +66,35 @@ def test_case_file_declares_smoke_version_and_no_private_fixtures():
         "order-after-sales-smoke-v1"
     }
     assert all(case.case_id and case.category for case in cases)
+
+
+def test_load_cases_accepts_jsonl_for_large_versioned_datasets(tmp_path):
+    case_path = tmp_path / "golden.jsonl"
+    rows = [
+        {
+            "case_id": "knowledge-001",
+            "dataset_version": "ecommerce-agent-golden-v1",
+            "category": "knowledge",
+            "turns": ["问题一"],
+        },
+        {
+            "case_id": "order-001",
+            "dataset_version": "ecommerce-agent-golden-v1",
+            "category": "order_logistics",
+            "turns": ["问题二"],
+        },
+    ]
+    case_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    cases = load_cases(case_path)
+
+    assert tuple(case.case_id for case in cases) == (
+        "knowledge-001",
+        "order-001",
+    )
+    assert {case.dataset_version for case in cases} == {
+        "ecommerce-agent-golden-v1"
+    }
