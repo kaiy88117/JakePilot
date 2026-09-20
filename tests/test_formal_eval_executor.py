@@ -47,8 +47,9 @@ def _manifest() -> FormalEvaluationManifest:
 
 
 class FakeMultiDomainRunner:
-    def __init__(self) -> None:
+    def __init__(self, tool_fixture_version="ecommerce-mock-v2") -> None:
         self.calls = 0
+        self.tool_fixture_version = tool_fixture_version
 
     def run(self, cases: tuple[EvalCase, ...]) -> SuiteRun:
         self.calls += 1
@@ -109,6 +110,26 @@ def test_formal_executor_rejects_ineligible_dataset_before_running(tmp_path):
             cases=_cases(approved=False),
             manifest=_manifest(),
             variant="baseline",
+        )
+
+    assert runner.calls == 0
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_formal_executor_rejects_tool_fixture_version_mismatch_before_running(
+    tmp_path,
+):
+    runner = FakeMultiDomainRunner(tool_fixture_version="ecommerce-mock-v1")
+    executor = FormalEvaluationExecutor(
+        runner=runner,
+        evidence_store=FormalEvidenceStore(tmp_path),
+    )
+
+    with pytest.raises(ValueError, match="tool fixture version mismatch"):
+        executor.run(
+            cases=_cases(),
+            manifest=_manifest(),
+            variant="jakepilot",
         )
 
     assert runner.calls == 0

@@ -7,6 +7,7 @@ from typing import Any
 
 from evaluation.contracts import EvalCase
 from evaluation.formal_gate import FORMAL_CATEGORY_TARGETS
+from evaluation.multidomain_runner import MultiDomainEvalRunner
 from evaluation.stream_runner import (
     CloseAgent,
     StreamCategoryEvalRunner,
@@ -50,4 +51,17 @@ def build_isolated_task_graph_category_runners(
         agent_factory=fixture_factory,
         write_count=lambda session: session.evaluation_write_count(),
         close_agent=lambda session: session.close(),
+    )
+
+
+def build_isolated_task_graph_runner(
+    fixture_factory: Callable[[EvalCase], Any],
+    *,
+    tool_fixture_version: str,
+) -> MultiDomainEvalRunner:
+    """Build a version-bound multi-domain runner for formal execution."""
+
+    return MultiDomainEvalRunner(
+        build_isolated_task_graph_category_runners(fixture_factory),
+        tool_fixture_version=tool_fixture_version,
     )

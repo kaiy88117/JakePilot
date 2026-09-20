@@ -17,8 +17,14 @@ class CategoryRunner(Protocol):
 class MultiDomainEvalRunner:
     """Dispatch cases to explicit category runners and fail on partial output."""
 
-    def __init__(self, runners: Mapping[str, CategoryRunner]) -> None:
+    def __init__(
+        self,
+        runners: Mapping[str, CategoryRunner],
+        *,
+        tool_fixture_version: str | None = None,
+    ) -> None:
         self.runners = dict(runners)
+        self.tool_fixture_version = tool_fixture_version
 
     def run(self, cases: tuple[EvalCase, ...]) -> SuiteRun:
         if not cases:

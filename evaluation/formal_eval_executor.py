@@ -12,6 +12,8 @@ from evaluation.order_runner import SuiteRun
 
 
 class FormalSuiteRunner(Protocol):
+    tool_fixture_version: str
+
     def run(self, cases: tuple[EvalCase, ...]) -> SuiteRun: ...
 
 
@@ -40,6 +42,13 @@ class FormalEvaluationExecutor:
                 "formal evaluation gate failed: "
                 + ", ".join(assessment.errors)
             )
+        runner_fixture_version = getattr(
+            self.runner,
+            "tool_fixture_version",
+            None,
+        )
+        if runner_fixture_version != manifest.tool_fixture_version:
+            raise ValueError("formal evaluation tool fixture version mismatch")
 
         runs = tuple(self.runner.run(cases) for _ in range(manifest.repeats))
         return self.evidence_store.write(

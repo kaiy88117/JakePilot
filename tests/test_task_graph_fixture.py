@@ -6,6 +6,7 @@ from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from evaluation.contracts import EvalCase
 from evaluation.task_graph_eval_adapter import (
     build_isolated_task_graph_category_runners,
+    build_isolated_task_graph_runner,
 )
 from evaluation.task_graph_fixture import IsolatedTaskGraphFixtureFactory
 
@@ -127,3 +128,9 @@ def test_isolated_fixture_plugs_into_all_formal_category_runners(tmp_path):
 
     assert suite.case_runs[0].observation.write_count == 0
     assert suite.case_runs[0].observation.terminal_status == "completed"
+
+    formal_runner = build_isolated_task_graph_runner(
+        factory,
+        tool_fixture_version="ecommerce-mock-v2",
+    )
+    assert formal_runner.tool_fixture_version == "ecommerce-mock-v2"
