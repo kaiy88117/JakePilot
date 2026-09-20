@@ -68,6 +68,7 @@ HERMESRAG_TIMEOUT_SECONDS=45
 看到 `Uvicorn running on http://127.0.0.1:8001` 后，在浏览器打开：
 
 - 演示工作台：<http://127.0.0.1:8001/>
+- 本地运行观测：<http://127.0.0.1:8001/admin/observability>
 - API 文档：<http://127.0.0.1:8001/docs>
 
 如果提示端口 `8001` 已被占用，说明服务已经启动，直接打开工作台即可；不要再次启动。
@@ -165,7 +166,9 @@ Set-Location 'D:\superhermes agentic\JakePilot'
 .\.venv\Scripts\python.exe -m scripts.run_agent_eval
 ```
 
-命令会运行 6 条离线订单售后 Smoke Case，覆盖查询、物流、退货资格、规则拒绝、确认写入和重启恢复，并输出 Evidence Report 文件名。讲解时应说明这是评测框架的可重复 Smoke Set，不是 200 条正式 Golden Set；可以展示工具顺序、确认、终态、写入次数和步数上限的确定性校验结果，但不要把 6/6 写成正式简历指标。
+命令会运行 6 条离线订单售后 Smoke Case，覆盖查询、物流、退货资格、规则拒绝、确认写入和重启恢复，并输出 Evidence Report 文件名。完成后刷新 <http://127.0.0.1:8001/admin/observability>，可以在同一页面展示最新报告、各项确定性断言和最近 Turn 的运行/投递状态。讲解时应说明这是评测框架的可重复 Smoke Set，不是 200 条正式 Golden Set；可以展示工具顺序、确认、终态、写入次数和步数上限的确定性校验结果，但不要把 6/6 写成正式简历指标。
+
+运行观测页仅允许本机访问，且只展示脱敏生命周期，不包含用户原文、回答正文、工具参数或隐藏推理。它是面试演示入口，不代表生产 JWT/RBAC 已完成。
 
 ## 5. 面试时的 30 秒讲法
 

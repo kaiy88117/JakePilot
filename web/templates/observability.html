@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="JakePilot 本地管理员运行观测">
+    <title>运行观测 | JakePilot</title>
+    <link rel="stylesheet" href="/static/observability.css">
+</head>
+<body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <header class="operator-bar">
+        <a class="brand" href="/" aria-label="返回 JakePilot 工作台">
+            <span class="brand-mark" aria-hidden="true">JP</span>
+            <span><strong>JakePilot</strong><small>本地管理员运行台</small></span>
+        </a>
+        <nav aria-label="观测页导航">
+            <span class="local-badge"><i aria-hidden="true"></i>仅本机可见</span>
+            <a href="/admin/observability">刷新数据</a>
+            <a class="back-link" href="/">返回工作台</a>
+        </nav>
+    </header>
+
+    <main id="main-content" class="operator-shell">
+        <section class="page-heading" aria-labelledby="page-title">
+            <div>
+                <p class="eyebrow">Runtime evidence</p>
+                <h1 id="page-title">运行观测</h1>
+                <p>查看脱敏 Turn 生命周期与离线评测证据。这里不保存用户原文、回答正文、工具参数或隐藏推理。</p>
+            </div>
+            <span class="gate-badge">开发 Smoke 门禁</span>
+        </section>
+
+        <section class="status-strip" aria-label="最近 Turn 状态摘要">
+            <article><span>最近记录</span><strong>{{ snapshot.turn_summary.total }}</strong><small>最多展示 20 条</small></article>
+            <article><span>正常完成</span><strong>{{ snapshot.turn_summary.completed }}</strong><small>Runtime 终态</small></article>
+            <article><span>成功投递</span><strong>{{ snapshot.turn_summary.delivered }}</strong><small>SSE 已送达</small></article>
+            <article><span>业务写入</span><strong>{{ snapshot.turn_summary.business_writes }}</strong><small>已确认副作用</small></article>
+        </section>
+
+        <div class="content-grid">
+            <section class="evaluation-panel" aria-labelledby="eval-title">
+                <div class="section-heading">
+                    <div><p class="section-kicker">Evidence report</p><h2 id="eval-title">最新离线评测</h2></div>
+                    {% if snapshot.evaluation.available %}
+                    <span class="result-badge">{{ snapshot.evaluation.passed_cases }}/{{ snapshot.evaluation.case_count }} Case 通过</span>
+                    {% else %}
+                    <span class="result-badge waiting">等待运行</span>
+                    {% endif %}
+                </div>
+
+                {% if snapshot.evaluation.available %}
+                <dl class="report-meta">
+                    <div><dt>数据集</dt><dd>{{ snapshot.evaluation.dataset_version }}</dd></div>
+                    <div><dt>代码版本</dt><dd>{{ snapshot.evaluation.code_revision }}</dd></div>
+                    <div><dt>运行时间</dt><dd>{{ snapshot.evaluation.created_at }}</dd></div>
+                </dl>
+                <div class="metric-list" role="list" aria-label="Smoke 评测指标">
+                    {% for metric in snapshot.evaluation.metrics %}
+                    <div class="metric-row" role="listitem">
+                        <span>{{ metric.label }}</span>
+                        <div class="metric-track" aria-hidden="true"><i style="--metric-width: {{ metric.rate_percent }}%"></i></div>
+                        <strong>{{ metric.passed }}/{{ metric.total }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state"><strong>{{ snapshot.evaluation.message }}</strong><p>运行 <code>python -m scripts.run_agent_eval</code> 后刷新本页。</p></div>
+                {% endif %}
+                <p class="truth-warning"><strong>指标边界：</strong>这是可重复的开发 Smoke 门禁，不是正式 Golden Set 指标，也不用于简历性能结论。</p>
+            </section>
+
+            <aside class="boundary-panel" aria-labelledby="boundary-title">
+                <p class="section-kicker">Data boundary</p>
+                <h2 id="boundary-title">脱敏生命周期</h2>
+                <ol>
+                    <li><span>01</span><div><strong>Working Memory</strong><p>当前业务任务和待确认动作。</p></div></li>
+                    <li><span>02</span><div><strong>Action Ledger</strong><p>幂等业务写入和结果事实。</p></div></li>
+                    <li><span>03</span><div><strong>Turn Journal</strong><p>运行、终止与投递状态，不记录正文。</p></div></li>
+                </ol>
+            </aside>
+        </div>
+
+        <section class="turn-panel" aria-labelledby="turn-title">
+            <div class="section-heading">
+                <div><p class="section-kicker">Recent turns</p><h2 id="turn-title">最近执行</h2></div>
+                <span>按最新记录排序</span>
+            </div>
+            {% if snapshot.turns %}
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Turn</th><th>运行状态</th><th>最后事件</th><th>投递</th><th>事件数</th><th>业务写入</th><th>更新时间</th></tr></thead>
+                    <tbody>
+                    {% for turn in snapshot.turns %}
+                    <tr>
+                        <td><code>{{ turn.turn_id }}</code></td>
+                        <td><span class="state-pill" data-state="{{ turn.status }}">{{ turn.status }}</span></td>
+                        <td>{{ turn.last_event_type }}</td>
+                        <td>{{ turn.delivery_status }}</td>
+                        <td class="number">{{ turn.event_count }}</td>
+                        <td>{{ "是" if turn.business_write_succeeded else "否" }}</td>
+                        <td><time>{{ turn.updated_at }}</time></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><strong>还没有 Turn 记录</strong><p>在工作台完成一次问答后刷新本页。</p></div>
+            {% endif %}
+        </section>
+    </main>
+    <footer><span>JakePilot · local observability</span><span>原始消息、回答与工具参数不进入此视图</span></footer>
+</body>
+</html>

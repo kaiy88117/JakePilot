@@ -8,6 +8,7 @@ import json
 import uuid
 import re
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -17,6 +18,7 @@ from pydantic import BaseModel, field_validator
 from api.stream_protocol import iter_sse_events
 from config.database import db_config
 from services.turn_journal import TurnJournal
+from services.observability_service import ObservabilityService
 import logging
 
 # 创建logger实例
@@ -27,6 +29,7 @@ templates = Jinja2Templates(directory="web/templates")
 # Web路由器
 router = APIRouter(tags=["Web界面"])
 _turn_journal: TurnJournal | None = None
+_REPORTS_DIR = Path(__file__).resolve().parents[1] / "artifacts" / "eval" / "reports"
 
 
 def _get_turn_journal() -> TurnJournal:
@@ -34,6 +37,10 @@ def _get_turn_journal() -> TurnJournal:
     if _turn_journal is None:
         _turn_journal = TurnJournal(db_config.connection_string)
     return _turn_journal
+
+
+def _is_local_client(host: str | None) -> bool:
+    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
 def _decode_public_frame(frame: str) -> tuple[str, dict] | None:
@@ -138,6 +145,24 @@ async def build_agent_event_stream(
 async def read_root(request: Request):
     """渲染主页聊天界面"""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@router.get(
+    "/admin/observability",
+    response_class=HTMLResponse,
+    summary="本地管理员运行观测页",
+)
+async def observability_page(request: Request):
+    """Render privacy-minimized runtime and smoke-evaluation evidence locally."""
+    client_host = request.client.host if request.client is not None else None
+    if not _is_local_client(client_host):
+        raise HTTPException(status_code=403, detail="local admin access only")
+    snapshot = ObservabilityService(_get_turn_journal(), _REPORTS_DIR).snapshot()
+    return templates.TemplateResponse(
+        "observability.html",
+        {"request": request, "snapshot": snapshot},
+        headers={"Cache-Control": "no-store"},
+    )
 
 @router.post("/chat/stream", summary="流式聊天")
 async def chat_stream_endpoint(chat: ChatRequest):

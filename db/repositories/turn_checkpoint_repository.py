@@ -80,6 +80,17 @@ class TurnCheckpointRepository:
             )
             return self._public_dict(row) if row is not None else None
 
+    def list_recent(self, *, limit: int = 20) -> list[dict]:
+        safe_limit = max(1, min(limit, 100))
+        with self.session_manager.session_scope() as session:
+            rows = (
+                session.query(TurnCheckpoint)
+                .order_by(TurnCheckpoint.id.desc())
+                .limit(safe_limit)
+                .all()
+            )
+            return [self._recent_dict(row) for row in rows]
+
     @staticmethod
     def _find(session, turn_id: str) -> TurnCheckpoint | None:
         return (
@@ -99,3 +110,8 @@ class TurnCheckpointRepository:
             "event_count": row.event_count,
         }
 
+    @classmethod
+    def _recent_dict(cls, row: TurnCheckpoint) -> dict:
+        payload = cls._public_dict(row)
+        payload["updated_at"] = row.updated_at.isoformat(timespec="seconds") + "Z"
+        return payload

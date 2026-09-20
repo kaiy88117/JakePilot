@@ -67,5 +67,8 @@ class TurnJournal:
     def get(self, turn_id: str, session_id: str) -> dict | None:
         return self.repository.get(turn_id, session_id)
 
+    def list_recent(self, limit: int = 20) -> list[dict]:
+        return self.repository.list_recent(limit=limit)
+
     def close(self) -> None:
         self.session_manager.close()
