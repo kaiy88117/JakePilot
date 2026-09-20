@@ -152,7 +152,7 @@ def test_component_metrics_keep_failed_outputs_in_denominator(
     assert report.hallucinated_slot_rate == pytest.approx(0.2)
     assert report.refusal_boundary_rate == pytest.approx(1.0)
     assert report.fallback_rate == pytest.approx(0.2)
-    assert report.p95_latency_ms >= 0
+    assert report.p95_local_latency_ms >= 0
     assert report.formal_benchmark is False
     assert report.promotion_eligible is False
 

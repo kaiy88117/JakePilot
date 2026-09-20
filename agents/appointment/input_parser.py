@@ -130,10 +130,26 @@ class InputParser:
             value = appointment_history.get(name)
             if value not in (None, "", "未知"):
                 confirmed_values[name] = value
-        try:
-            confirmed_slots = AppointmentSlots(**confirmed_values)
-        except (TypeError, ValueError):
-            confirmed_slots = AppointmentSlots()
+        legacy_project = _known(appointment_history.get("project"))
+        legacy_service_type = _service_type(legacy_project)
+        if "product_ref" not in confirmed_values:
+            product_ref = _product_ref(legacy_project, legacy_service_type)
+            if product_ref:
+                confirmed_values["product_ref"] = product_ref
+        if "service_type" not in confirmed_values and legacy_service_type:
+            confirmed_values["service_type"] = legacy_service_type
+        if "date_range" not in confirmed_values:
+            legacy_start_time = _known(appointment_history.get("start_time"))
+            if legacy_start_time:
+                confirmed_values["date_range"] = legacy_start_time
+        valid_confirmed_values: dict[str, Any] = {}
+        for name, value in confirmed_values.items():
+            try:
+                candidate = AppointmentSlots(**{name: value})
+            except (TypeError, ValueError):
+                continue
+            valid_confirmed_values[name] = getattr(candidate, name)
+        confirmed_slots = AppointmentSlots(**valid_confirmed_values)
         return DecisionRequest(
             message=user_input,
             recent_appointment_history=recent_history[-6:],

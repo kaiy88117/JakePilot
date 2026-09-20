@@ -160,9 +160,10 @@ HERMESRAG_TIMEOUT_SECONDS=45
 预约结构化模型运行边界已接入，但演示默认配置为
 `APPOINTMENT_DECISION_MODE=disabled`，因此不会访问本地推理端点。需要比较本地
 模型时可改为 `shadow`：本地模型会生成结构化决策并接受 Schema、已确认槽位和
-业务前置条件校验，但远端强模型结果仍是唯一权威结果。`local_first` 只有在
-`APPOINTMENT_MODEL_EVIDENCE_DIR` 中存在不少于 150 条冻结样本产生、且
-`promotion_eligible=true` 的正式报告时才会启用，否则自动降为 `shadow`。
+业务前置条件校验，但远端强模型结果仍是唯一权威结果。当前旧预约处理器尚未迁移
+到新动作契约，因此 `local_first` 即使存在不少于 150 条冻结样本产生、且
+`promotion_eligible=true` 的组件报告，也会以 `integration_runtime_not_ready`
+自动降为 `shadow`；完成端到端执行顺序改造与冻结集对照前不会开放。
 超时、非法 JSON、未允许动作或已确认槽位冲突均回退强模型；Trace 只展示模式、
 来源、耗时、校验状态和回退原因，不包含原始消息、槽位值或凭据。
 

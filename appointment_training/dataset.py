@@ -11,7 +11,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from appointment_decision import AppointmentDecision
+from appointment_decision import (
+    AppointmentDecision,
+    AppointmentSlots,
+    DecisionValidationError,
+    validate_decision,
+)
 
 
 _PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
@@ -83,7 +88,7 @@ def validate_dataset(path: Path, *, formal: bool = False) -> DatasetManifest:
         except json.JSONDecodeError as exc:
             raise DatasetValidationError(
                 f"line {line_number}: invalid JSON"
-            ) from exc
+            ) from None
         if not isinstance(raw, dict):
             raise DatasetValidationError(
                 f"line {line_number}: row must be a JSON object"
@@ -94,7 +99,13 @@ def validate_dataset(path: Path, *, formal: bool = False) -> DatasetManifest:
         except ValidationError as exc:
             raise DatasetValidationError(
                 f"line {line_number}: invalid row: {exc.errors()[0]['msg']}"
-            ) from exc
+            ) from None
+        try:
+            validate_decision(item.decision, AppointmentSlots())
+        except DecisionValidationError as exc:
+            raise DatasetValidationError(
+                f"line {line_number}: business-invalid decision label: {exc}"
+            ) from None
         if item.sample_id in seen_ids:
             raise DatasetValidationError(
                 f"line {line_number}: duplicate sample_id {item.sample_id}"

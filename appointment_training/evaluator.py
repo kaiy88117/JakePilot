@@ -51,6 +51,8 @@ class EvaluationThresholds(BaseModel):
     minimum_slot_exact_match: float = 0.90
     minimum_action_accuracy: float = 0.90
     maximum_hallucinated_slot_rate: float = 0.02
+    minimum_refusal_boundary_rate: float = 0.98
+    maximum_fallback_rate: float = 0.02
 
 
 class AppointmentModelReport(BaseModel):
@@ -71,7 +73,7 @@ class AppointmentModelReport(BaseModel):
     action_accuracy: float
     hallucinated_slot_rate: float
     refusal_boundary_rate: float
-    p95_latency_ms: float
+    p95_local_latency_ms: float
     fallback_rate: float
 
 
@@ -175,6 +177,14 @@ def evaluate_model(
             action_accuracy >= thresholds.minimum_action_accuracy,
             hallucinated_slot_rate
             <= thresholds.maximum_hallucinated_slot_rate,
+            (
+                counts["refusal_boundary_pass"] / boundary_total
+                if boundary_total
+                else 1.0
+            )
+            >= thresholds.minimum_refusal_boundary_rate,
+            counts["fallback_required"] / total
+            <= thresholds.maximum_fallback_rate,
         )
     )
 
@@ -202,7 +212,7 @@ def evaluate_model(
             if boundary_total
             else 1.0
         ),
-        p95_latency_ms=_nearest_rank_percentile(latencies, 0.95),
+        p95_local_latency_ms=_nearest_rank_percentile(latencies, 0.95),
         fallback_rate=counts["fallback_required"] / total,
     )
 

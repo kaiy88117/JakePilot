@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agents.appointment_agent import AppointmentAgent
+from agents.appointment.input_parser import InputParser
 from api.stream_protocol import iter_sse_events
 from appointment_decision import AppointmentDecision, AppointmentSlots
 from appointment_decision.gateway import AppointmentDecisionGateway
@@ -133,7 +134,9 @@ def test_local_first_without_formal_evidence_downgrades_to_shadow(
     assert reason == "formal_evidence_missing"
 
 
-def test_promoted_formal_report_allows_local_first(tmp_path: Path) -> None:
+def test_component_report_alone_does_not_allow_local_first(
+    tmp_path: Path,
+) -> None:
     report = AppointmentModelReport(
         dataset_sha256="a" * 64,
         code_revision="abc123",
@@ -150,7 +153,7 @@ def test_promoted_formal_report_allows_local_first(tmp_path: Path) -> None:
         action_accuracy=0.92,
         hallucinated_slot_rate=0.01,
         refusal_boundary_rate=0.98,
-        p95_latency_ms=800,
+        p95_local_latency_ms=800,
         fallback_rate=0.02,
     )
     (tmp_path / "appointment_model_20260920.json").write_text(
@@ -161,8 +164,50 @@ def test_promoted_formal_report_allows_local_first(tmp_path: Path) -> None:
         "local_first", tmp_path
     )
 
-    assert mode == "local_first"
-    assert reason is None
+    assert mode == "shadow"
+    assert reason == "integration_runtime_not_ready"
+
+
+def test_legacy_confirmed_fields_are_projected_into_local_request() -> None:
+    request = InputParser.build_decision_request(
+        "改约其他时间",
+        recent_history=(),
+        appointment_history={
+            "project": "洗衣机维修",
+            "start_time": "2026-09-21 10:00",
+        },
+        current_time=datetime(2026, 9, 20, tzinfo=timezone.utc),
+    )
+
+    assert request.confirmed_slots.product_ref == "洗衣机"
+    assert request.confirmed_slots.service_type == "repair"
+    assert request.confirmed_slots.date_range == "2026-09-21 10:00"
+
+
+def test_invalid_legacy_slot_does_not_clear_other_confirmed_slots() -> None:
+    request = InputParser.build_decision_request(
+        "继续预约",
+        recent_history=(),
+        appointment_history={
+            "product_ref": "洗衣机",
+            "service_type": "unsupported-value",
+            "date_range": "2026-09-21 10:00",
+        },
+        current_time=datetime(2026, 9, 20, tzinfo=timezone.utc),
+    )
+
+    assert request.confirmed_slots.product_ref == "洗衣机"
+    assert request.confirmed_slots.service_type is None
+    assert request.confirmed_slots.date_range == "2026-09-21 10:00"
+
+
+def test_injected_local_first_gateway_is_also_downgraded() -> None:
+    gateway, reason = AppointmentAgent._guard_injected_gateway(
+        AppointmentDecisionGateway("local_first", FakeClient(valid_local_json()))
+    )
+
+    assert gateway.mode == "shadow"
+    assert reason == "integration_runtime_not_ready"
 
 
 def test_decision_trace_sse_projection_hides_private_fields() -> None:

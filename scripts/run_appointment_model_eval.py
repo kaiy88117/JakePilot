@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from appointment_decision.client import LocalDecisionClient
+from appointment_training import DatasetValidationError
 from appointment_training.evaluator import EvaluationMetadata, evaluate_model
 from appointment_training.evidence import write_report
 
@@ -23,17 +24,21 @@ def main() -> int:
     args = parser.parse_args()
 
     client = LocalDecisionClient.from_env()
-    report = evaluate_model(
-        args.input,
-        client.complete,
-        metadata=EvaluationMetadata(
-            code_revision=args.code_revision,
-            prompt_version=args.prompt_version,
-            model_version=args.model_version,
-            hardware_label=args.hardware_label,
-        ),
-        formal=args.formal,
-    )
+    try:
+        report = evaluate_model(
+            args.input,
+            client.complete,
+            metadata=EvaluationMetadata(
+                code_revision=args.code_revision,
+                prompt_version=args.prompt_version,
+                model_version=args.model_version,
+                hardware_label=args.hardware_label,
+            ),
+            formal=args.formal,
+        )
+    except DatasetValidationError as exc:
+        print(json.dumps({"valid": False, "error": str(exc)}))
+        return 1
     report_path = write_report(report, args.output_dir)
     print(
         json.dumps(

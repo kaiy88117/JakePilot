@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import traceback
 from pathlib import Path
 
 import pytest
@@ -124,6 +127,25 @@ def test_invalid_decision_contract_is_rejected(tmp_path: Path) -> None:
         validate_dataset(path)
 
 
+def test_business_invalid_decision_label_is_rejected(tmp_path: Path) -> None:
+    path = write_jsonl(
+        tmp_path / "data.jsonl",
+        [
+            sample(
+                "apt-1",
+                decision={
+                    "action": "finish",
+                    "slots": {"confirmation": False},
+                    "missing_slots": [],
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(DatasetValidationError, match="business-invalid"):
+        validate_dataset(path)
+
+
 @pytest.mark.parametrize(
     "row",
     [
@@ -152,3 +174,60 @@ def test_formal_dataset_requires_at_least_150_eval_samples(
 
     with pytest.raises(DatasetValidationError, match="at least 150"):
         validate_dataset(path, formal=True)
+
+
+def test_validation_exception_chain_does_not_contain_raw_customer_text(
+    tmp_path: Path,
+) -> None:
+    marker = "SYNTHETIC_RAW_CUSTOMER_CONTENT"
+    path = write_jsonl(
+        tmp_path / "data.jsonl",
+        [sample("apt-1", content=marker + "x" * 4100)],
+    )
+
+    with pytest.raises(DatasetValidationError) as exc_info:
+        validate_dataset(path)
+
+    rendered = "".join(
+        traceback.format_exception(exc_info.value)
+    )
+    assert marker not in rendered
+
+
+def test_model_eval_cli_reports_validation_error_without_raw_text(
+    tmp_path: Path,
+) -> None:
+    marker = "SYNTHETIC_CLI_PRIVATE_CONTENT"
+    path = write_jsonl(
+        tmp_path / "data.jsonl",
+        [sample("apt-1", content=marker + "x" * 4100)],
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.run_appointment_model_eval",
+            "--input",
+            str(path),
+            "--output-dir",
+            str(tmp_path / "reports"),
+            "--code-revision",
+            "test",
+            "--prompt-version",
+            "test",
+            "--model-version",
+            "test",
+            "--hardware-label",
+            "test",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert marker not in result.stdout
+    assert marker not in result.stderr
+    assert json.loads(result.stdout)["valid"] is False

@@ -386,7 +386,7 @@ git commit -m "feat: validate appointment training datasets"
 **Interfaces:**
 - Consumes: frozen evaluation JSONL accepted by `validate_dataset`
 - Consumes: callable `predict(DecisionRequest) -> str`
-- Produces: `AppointmentModelReport` with structure validity, slot Exact Match, field F1, action accuracy, hallucinated-slot rate, refusal-boundary rate, P95 latency, and fallback rate
+- Produces: `AppointmentModelReport` with structure validity, slot Exact Match, field F1, action accuracy, hallucinated-slot rate, refusal-boundary rate, local-decision P95 latency, and fallback rate
 
 - [ ] **Step 1: Write failing evaluator tests**
 
@@ -400,7 +400,7 @@ Expected: imports fail because the evaluator does not exist.
 
 - [ ] **Step 3: Implement deterministic component metrics**
 
-Calculate metrics from parsed `AppointmentDecision` objects. Count a non-null predicted slot absent from the reference as hallucinated. Treat malformed output as failed structure, action, and slots; never drop it from the denominator. Compute P95 from all attempts, including fallback latency, with nearest-rank selection.
+Calculate metrics from parsed `AppointmentDecision` objects. Count a non-null predicted slot absent from the reference as hallucinated. Treat malformed output as failed structure, action, and slots; never drop it from the denominator. Compute `p95_local_latency_ms` from all local prediction attempts with nearest-rank selection. End-to-end fallback latency belongs to the later integration benchmark and must not be presented as this component metric.
 
 - [ ] **Step 4: Implement promotion decision**
 

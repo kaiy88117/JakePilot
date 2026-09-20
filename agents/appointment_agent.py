@@ -46,8 +46,10 @@ class AppointmentAgent:
                 self.decision_mode_reason,
             ) = self._decision_gateway_from_env()
         else:
-            self.decision_gateway = decision_gateway
-            self.decision_mode_reason = None
+            (
+                self.decision_gateway,
+                self.decision_mode_reason,
+            ) = self._guard_injected_gateway(decision_gateway)
         
         # 初始化LLM
         self.llm = self._initialize_llm()
@@ -85,6 +87,15 @@ class AppointmentAgent:
         return chat_history
 
     @staticmethod
+    def _guard_injected_gateway(decision_gateway):
+        if decision_gateway.mode == "local_first":
+            return (
+                AppointmentDecisionGateway("shadow", decision_gateway.client),
+                "integration_runtime_not_ready",
+            )
+        return decision_gateway, None
+
+    @staticmethod
     def _resolve_decision_mode(
         requested_mode: str,
         evidence_dir: Path,
@@ -114,7 +125,10 @@ class AppointmentAgent:
             and report.sample_count >= 150
         ):
             return "shadow", "formal_evidence_missing"
-        return "local_first", None
+        # The current legacy processor invokes the strong parser before this
+        # seam and does not yet execute the new action contract. Component
+        # evidence alone therefore cannot authorize a true local-first path.
+        return "shadow", "integration_runtime_not_ready"
 
     @classmethod
     def _decision_gateway_from_env(cls):
