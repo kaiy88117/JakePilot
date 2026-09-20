@@ -67,6 +67,7 @@ h2 { font: 700 21px/1.25 Georgia, "Songti SC", serif; }
 .report-meta div + div { border-left: 1px solid var(--line); }
 .report-meta dt { color: var(--ink-soft); font-size: 10px; }
 .report-meta dd { margin: 4px 0 0; overflow-wrap: anywhere; font: 600 11px/1.5 ui-monospace, "Cascadia Code", monospace; }
+.report-proof { margin: -10px 0 18px; color: var(--ink-soft); font: 500 10px/1.5 ui-monospace, "Cascadia Code", monospace; }
 .metric-list { display: grid; gap: 11px; }
 .metric-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(100px, 2fr) 44px; align-items: center; gap: 14px; font-size: 12px; }
 .metric-track { height: 4px; overflow: hidden; border-radius: 999px; background: oklch(0.3 0.015 230); }

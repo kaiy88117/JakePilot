@@ -186,6 +186,19 @@ Set-Location 'D:\superhermes agentic\JakePilot'
 
 命令会运行 6 条离线订单售后 Smoke Case，覆盖查询、物流、退货资格、规则拒绝、确认写入和重启恢复，并输出 Evidence Report 文件名。完成后刷新 <http://127.0.0.1:8001/admin/observability>，可以在同一页面展示最新报告、各项确定性断言和最近 Turn 的运行/投递状态。讲解时应说明这是评测框架的可重复 Smoke Set，不是 200 条正式 Golden Set；可以展示工具顺序、确认、终态、写入次数和步数上限的确定性校验结果，但不要把 6/6 写成正式简历指标。
 
+`--formal` 是失败关闭门禁，不是把 Smoke 改名成正式评测。它要求数据集版本为
+`*-golden-vN`、总量不少于 200 条、七类业务配额完整、固定模型/Prompt/工具桩版本，
+并声明每条 Case 重复运行 3 次。直接对仓库内 Smoke Set 执行会返回
+`formal_gate_rejected`，且不会生成报告：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.run_agent_eval --formal --model-version <model-id> --prompt-version <prompt-id> --tool-fixture-version <fixture-id>
+```
+
+当前尚未提交 200 条合规 Golden Set，也未接入多领域 Baseline 与 Semantic Judge；
+因此管理员页只能展示 Smoke 报告。只有未来报告同时携带完整门禁证据时，页面才会标记为
+“正式 Golden Set”。
+
 运行观测页仅允许本机访问，且只展示脱敏生命周期，不包含用户原文、回答正文、工具参数或隐藏推理。它是面试演示入口，不代表生产 JWT/RBAC 已完成。
 
 ## 5. 面试时的 30 秒讲法

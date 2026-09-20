@@ -28,7 +28,7 @@
                 <h1 id="page-title">运行观测</h1>
                 <p>查看脱敏 Turn 生命周期与离线评测证据。这里不保存用户原文、回答正文、工具参数或隐藏推理。</p>
             </div>
-            <span class="gate-badge">开发 Smoke 门禁</span>
+            <span class="gate-badge">{{ snapshot.evaluation.gate_label or "开发 Smoke 门禁" }}</span>
         </section>
 
         <section class="status-strip" aria-label="最近 Turn 状态摘要">
@@ -56,7 +56,8 @@
                     <div><dt>代码版本</dt><dd>{{ snapshot.evaluation.code_revision }}</dd></div>
                     <div><dt>运行时间</dt><dd>{{ snapshot.evaluation.created_at }}</dd></div>
                 </dl>
-                <div class="metric-list" role="list" aria-label="Smoke 评测指标">
+                <p class="report-proof">重复次数 {{ snapshot.evaluation.repeat_count }} · 数据摘要 {{ snapshot.evaluation.dataset_digest or "旧版报告未记录" }}</p>
+                <div class="metric-list" role="list" aria-label="{{ snapshot.evaluation.gate_label }}评测指标">
                     {% for metric in snapshot.evaluation.metrics %}
                     <div class="metric-row" role="listitem">
                         <span>{{ metric.label }}</span>
@@ -68,7 +69,11 @@
                 {% else %}
                 <div class="empty-state"><strong>{{ snapshot.evaluation.message }}</strong><p>运行 <code>python -m scripts.run_agent_eval</code> 后刷新本页。</p></div>
                 {% endif %}
+                {% if snapshot.evaluation.formal_benchmark %}
+                <p class="truth-warning"><strong>证据边界：</strong>这是通过规模、配额、三次重复与版本固定门禁的正式 Golden Set 报告；结论仍以对应 Evidence Report 为准。</p>
+                {% else %}
                 <p class="truth-warning"><strong>指标边界：</strong>这是可重复的开发 Smoke 门禁，不是正式 Golden Set 指标，也不用于简历性能结论。</p>
+                {% endif %}
             </section>
 
             <aside class="boundary-panel" aria-labelledby="boundary-title">

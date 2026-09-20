@@ -102,12 +102,91 @@ def test_observability_snapshot_uses_latest_valid_report_without_raw_cases(tmp_p
 
     assert snapshot["evaluation"]["available"] is True
     assert snapshot["evaluation"]["formal_benchmark"] is False
+    assert snapshot["evaluation"]["repeat_count"] == 1
+    assert snapshot["evaluation"]["gate_label"] == "开发 Smoke 门禁"
     assert snapshot["evaluation"]["passed_cases"] == 5
     assert snapshot["evaluation"]["code_revision"] == "abc1234"
     assert snapshot["turns"][0]["turn_id"] == "turn-safe"
     serialized = json.dumps(snapshot, ensure_ascii=False)
     assert "secret-digest" not in serialized
     assert "return.create" not in serialized
+
+
+def test_observability_rejects_smoke_report_claiming_formal_status(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    forged = {
+        "schema_version": "2.0",
+        "run_id": "smoke_forged",
+        "suite_kind": "smoke",
+        "formal_benchmark": True,
+        "repeat_count": 3,
+        "dataset_version": "order-after-sales-smoke-v1",
+        "code_revision": "abc1234",
+        "created_at": "2026-09-20T01:00:00+00:00",
+        "case_count": 200,
+        "summary": {
+            "end_to_end_task_success": {
+                "passed": 200,
+                "total": 200,
+                "rate": 1.0,
+            }
+        },
+    }
+    (reports / "forged.json").write_text(
+        json.dumps(forged), encoding="utf-8"
+    )
+
+    class EmptyJournal:
+        def list_recent(self, limit=20):
+            return []
+
+    snapshot = ObservabilityService(EmptyJournal(), reports).snapshot()
+
+    assert snapshot["evaluation"]["available"] is False
+    assert snapshot["evaluation"]["formal_benchmark"] is False
+
+
+def test_observability_accepts_only_gate_eligible_formal_report(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    formal = {
+        "schema_version": "2.0",
+        "run_id": "golden_20260920_valid",
+        "suite_kind": "golden",
+        "formal_benchmark": True,
+        "repeat_count": 3,
+        "dataset_version": "ecommerce-agent-golden-v1",
+        "dataset_digest": "a" * 64,
+        "code_revision": "abc123456789",
+        "created_at": "2026-09-20T01:00:00+00:00",
+        "case_count": 200,
+        "formal_gate": {"eligible": True, "errors": []},
+        "summary": {
+            "end_to_end_task_success": {
+                "passed": 170,
+                "total": 200,
+                "rate": 0.85,
+            }
+        },
+    }
+    (reports / "formal.json").write_text(
+        json.dumps(formal), encoding="utf-8"
+    )
+
+    class EmptyJournal:
+        def list_recent(self, limit=20):
+            return []
+
+    evaluation = ObservabilityService(
+        EmptyJournal(), reports
+    ).snapshot()["evaluation"]
+
+    assert evaluation["available"] is True
+    assert evaluation["formal_benchmark"] is True
+    assert evaluation["gate_label"] == "正式 Golden Set"
+    assert evaluation["repeat_count"] == 3
+    assert evaluation["dataset_digest"] == "aaaaaaaaaaaa"
 
 
 def test_observability_snapshot_has_honest_empty_evaluation_state(tmp_path):
@@ -215,3 +294,44 @@ def test_observability_page_is_local_only_and_labels_smoke_results():
     assert "raw_message" not in visible
     assert "/static/observability.css" in page.assets
     assert "/" in page.assets
+
+
+def test_observability_page_labels_gate_eligible_formal_results():
+    environment = Environment(
+        loader=FileSystemLoader(ROOT / "web" / "templates"),
+        autoescape=True,
+    )
+    rendered = environment.get_template("observability.html").render(
+        snapshot={
+            "evaluation": {
+                "available": True,
+                "formal_benchmark": True,
+                "gate_label": "正式 Golden Set",
+                "passed_cases": 170,
+                "case_count": 200,
+                "dataset_version": "ecommerce-agent-golden-v1",
+                "dataset_digest": "aaaaaaaaaaaa",
+                "repeat_count": 3,
+                "code_revision": "abc1234",
+                "created_at": "2026-09-20T01:00:00+00:00",
+                "metrics": [],
+            },
+            "turn_summary": {
+                "total": 0,
+                "completed": 0,
+                "delivered": 0,
+                "business_writes": 0,
+            },
+            "turns": [],
+            "handoff_summary": {"total": 0, "open": 0},
+            "handoffs": [],
+        }
+    )
+    page = _PageParser()
+    page.feed(rendered)
+    visible = " ".join(page.text)
+
+    assert "正式 Golden Set" in visible
+    assert "重复次数 3" in visible
+    assert "数据摘要 aaaaaaaaaaaa" in visible
+    assert "不是正式 Golden Set 指标" not in visible

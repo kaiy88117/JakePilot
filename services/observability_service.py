@@ -111,7 +111,28 @@ class ObservabilityService:
 
     @staticmethod
     def _evaluation_projection(payload: dict) -> dict:
-        if payload.get("suite_kind") != "smoke":
+        suite_kind = payload.get("suite_kind")
+        formal_benchmark = payload.get("formal_benchmark", False)
+        repeat_count = int(payload.get("repeat_count", 1))
+        dataset_digest = str(payload.get("dataset_digest") or "")
+        if suite_kind == "smoke":
+            if formal_benchmark or repeat_count != 1:
+                raise ValueError("smoke report cannot claim formal status")
+            gate_label = "开发 Smoke 门禁"
+        elif suite_kind == "golden":
+            formal_gate = payload.get("formal_gate") or {}
+            if (
+                formal_benchmark is not True
+                or repeat_count != 3
+                or int(payload.get("case_count", 0)) < 200
+                or formal_gate.get("eligible") is not True
+                or formal_gate.get("errors") != []
+                or len(dataset_digest) != 64
+                or any(char not in "0123456789abcdef" for char in dataset_digest)
+            ):
+                raise ValueError("formal report failed evidence checks")
+            gate_label = "正式 Golden Set"
+        else:
             raise ValueError("unsupported evaluation suite")
         summary = payload["summary"]
         task_success = summary["end_to_end_task_success"]
@@ -129,7 +150,11 @@ class ObservabilityService:
             )
         return {
             "available": True,
-            "formal_benchmark": False,
+            "formal_benchmark": formal_benchmark,
+            "suite_kind": suite_kind,
+            "gate_label": gate_label,
+            "repeat_count": repeat_count,
+            "dataset_digest": dataset_digest[:12],
             "run_id": str(payload["run_id"]),
             "dataset_version": str(payload["dataset_version"]),
             "code_revision": str(payload.get("code_revision") or "unknown")[:7],
