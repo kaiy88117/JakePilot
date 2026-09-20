@@ -210,3 +210,27 @@ class TurnCheckpoint(Base):
     event_count = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=utc_now_naive, nullable=False)
     updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+
+
+class HumanHandoffTicket(Base):
+    __tablename__ = "human_handoff_tickets"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "turn_id", name="uq_handoff_tenant_turn"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    ticket_no = Column(String, nullable=False, unique=True, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False, index=True)
+    session_id = Column(String, nullable=False, index=True)
+    turn_id = Column(String, nullable=False, index=True)
+    reason_code = Column(String, nullable=False)
+    summary = Column(String(240), nullable=False)
+    verified_facts_json = Column(JSON, nullable=False, default=list)
+    evidence_refs_json = Column(JSON, nullable=False, default=list)
+    failed_steps_json = Column(JSON, nullable=False, default=list)
+    status = Column(String, nullable=False, default="open")
+    created_at = Column(DateTime, default=utc_now_naive, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
