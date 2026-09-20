@@ -114,6 +114,10 @@ class AppointmentDecisionGateway:
             return None, _elapsed_ms(started), reason
         except (KeyError, TypeError, ValueError, requests.RequestException):
             return None, _elapsed_ms(started), "local_error"
+        except Exception:
+            # Provider/client implementations may raise library-specific
+            # exceptions. Keep their text out of traces and fail closed.
+            return None, _elapsed_ms(started), "local_error"
         return decision, _elapsed_ms(started), None
 
     def _outcome(

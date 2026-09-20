@@ -136,6 +136,10 @@ def test_local_first_returns_valid_local_decision(
     ("client", "reason"),
     [
         (FakeClient(error=TimeoutError()), "timeout"),
+        (
+            FakeClient(error=RuntimeError("PRIVATE_LOCAL_DIAGNOSTIC")),
+            "local_error",
+        ),
         (FakeClient("not-json"), "invalid_json"),
         (
             FakeClient(
