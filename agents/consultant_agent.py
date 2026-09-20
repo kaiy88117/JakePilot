@@ -45,8 +45,11 @@ class ConsultantAgent:
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
-        await self.knowledge_retriever.initialize()
-        print("咨询机器人已启动（数据库RAG模式）")
+        if self.consultation_processor.knowledge_client is None:
+            await self.knowledge_retriever.initialize()
+            print("咨询机器人已启动（本地知识库模式）")
+        else:
+            print("咨询机器人已启动（HermesRAG Knowledge Tool 模式）")
         return self
 
     async def __aexit__(self, exc_type, exc, tb):

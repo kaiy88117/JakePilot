@@ -1,6 +1,8 @@
 import asyncio
 import json
+from types import SimpleNamespace
 
+from agents.consultant_agent import ConsultantAgent
 from agents.consultant.consultation_processor import ConsultationProcessor
 from services.hermesrag_client import (
     HermesRagError,
@@ -175,3 +177,17 @@ def test_stream_failure_announces_generic_fallback_without_exception_text():
     }
     assert "本地降级回答" in serialized
     assert "PRIVATE_UPSTREAM_DETAIL" not in serialized
+
+
+def test_entering_hermesrag_consultation_does_not_require_local_index():
+    class LocalRetrieverMustRemainLazy:
+        async def initialize(self):
+            raise AssertionError("local index should remain lazy")
+
+    agent = ConsultantAgent.__new__(ConsultantAgent)
+    agent.knowledge_retriever = LocalRetrieverMustRemainLazy()
+    agent.consultation_processor = SimpleNamespace(knowledge_client=object())
+
+    entered = run(agent.__aenter__())
+
+    assert entered is agent
