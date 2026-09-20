@@ -39,6 +39,7 @@ def _manifest(**overrides) -> FormalEvaluationManifest:
         "model_version": "deepseek-flash-2026-09",
         "prompt_version": "planner-v3",
         "tool_fixture_version": "ecommerce-mock-v2",
+        "code_revision": "abc123456789",
         "repeats": 3,
     }
     payload.update(overrides)
@@ -93,3 +94,27 @@ def test_formal_dataset_digest_is_order_independent_and_content_sensitive():
 
     assert first == reordered
     assert changed != first
+
+
+def test_formal_gate_rejects_duplicate_ids_and_unpinned_versions():
+    cases = list(_formal_cases())
+    cases[-1] = cases[0]
+
+    assessment = FormalEvaluationGate().assess(
+        tuple(cases),
+        _manifest(
+            model_version="not_pinned",
+            prompt_version="unknown",
+            tool_fixture_version="not_applicable",
+            code_revision="unknown",
+        ),
+    )
+
+    assert assessment.eligible is False
+    assert {
+        "duplicate_case_id:knowledge-000",
+        "unpinned_model_version",
+        "unpinned_prompt_version",
+        "unpinned_tool_fixture_version",
+        "unpinned_code_revision",
+    }.issubset(assessment.errors)

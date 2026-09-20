@@ -2,6 +2,7 @@ import json
 from html.parser import HTMLParser
 from pathlib import Path
 
+import pytest
 from jinja2 import Environment, FileSystemLoader
 
 from services.observability_service import ObservabilityService
@@ -161,7 +162,26 @@ def test_observability_accepts_only_gate_eligible_formal_report(tmp_path):
         "code_revision": "abc123456789",
         "created_at": "2026-09-20T01:00:00+00:00",
         "case_count": 200,
-        "formal_gate": {"eligible": True, "errors": []},
+        "formal_gate": {
+            "eligible": True,
+            "errors": [],
+            "case_count": 200,
+            "dataset_digest": "a" * 64,
+            "category_counts": {
+                "knowledge": 40,
+                "order_logistics": 40,
+                "return_exchange": 40,
+                "appointment": 30,
+                "combined_intent": 20,
+                "memory_dependency": 15,
+                "safety_exception": 15,
+            },
+        },
+        "run_config": {
+            "model_version": "deepseek-flash-2026-09",
+            "prompt_version": "planner-v3",
+            "tool_fixture_version": "ecommerce-mock-v2",
+        },
         "summary": {
             "end_to_end_task_success": {
                 "passed": 170,
@@ -187,6 +207,94 @@ def test_observability_accepts_only_gate_eligible_formal_report(tmp_path):
     assert evaluation["gate_label"] == "正式 Golden Set"
     assert evaluation["repeat_count"] == 3
     assert evaluation["dataset_digest"] == "aaaaaaaaaaaa"
+
+
+def test_observability_rejects_formal_report_with_inconsistent_gate_digest():
+    payload = {
+        "run_id": "golden_inconsistent",
+        "suite_kind": "golden",
+        "formal_benchmark": True,
+        "repeat_count": 3,
+        "dataset_version": "ecommerce-agent-golden-v1",
+        "dataset_digest": "a" * 64,
+        "code_revision": "abc123456789",
+        "created_at": "2026-09-20T01:00:00+00:00",
+        "case_count": 200,
+        "formal_gate": {
+            "eligible": True,
+            "errors": [],
+            "case_count": 200,
+            "dataset_digest": "b" * 64,
+            "category_counts": {
+                "knowledge": 40,
+                "order_logistics": 40,
+                "return_exchange": 40,
+                "appointment": 30,
+                "combined_intent": 20,
+                "memory_dependency": 15,
+                "safety_exception": 15,
+            },
+        },
+        "run_config": {
+            "model_version": "deepseek-flash-2026-09",
+            "prompt_version": "planner-v3",
+            "tool_fixture_version": "ecommerce-mock-v2",
+        },
+        "summary": {
+            "end_to_end_task_success": {
+                "passed": 170,
+                "total": 200,
+                "rate": 0.85,
+            }
+        },
+    }
+
+    with pytest.raises(ValueError, match="formal report failed evidence checks"):
+        ObservabilityService._evaluation_projection(payload)
+
+
+def test_observability_rejects_formal_report_with_unpinned_run_config(tmp_path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    payload = {
+        "schema_version": "2.0",
+        "run_id": "golden_unpinned",
+        "suite_kind": "golden",
+        "formal_benchmark": True,
+        "repeat_count": 3,
+        "dataset_version": "ecommerce-agent-golden-v1",
+        "dataset_digest": "a" * 64,
+        "code_revision": "unknown",
+        "created_at": "2026-09-20T01:00:00+00:00",
+        "case_count": 200,
+        "formal_gate": {"eligible": True, "errors": []},
+        "run_config": {
+            "model_version": "not_pinned",
+            "prompt_version": "planner-v3",
+            "tool_fixture_version": "ecommerce-mock-v2",
+        },
+        "summary": {
+            "end_to_end_task_success": {
+                "passed": 170,
+                "total": 200,
+                "rate": 0.85,
+            }
+        },
+    }
+    (reports / "formal.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+    class EmptyJournal:
+        def list_recent(self, limit=20):
+            return []
+
+    evaluation = ObservabilityService(
+        EmptyJournal(), reports
+    ).snapshot()["evaluation"]
+
+    assert evaluation["available"] is False
+    assert evaluation["formal_benchmark"] is False
 
 
 def test_observability_snapshot_has_honest_empty_evaluation_state(tmp_path):

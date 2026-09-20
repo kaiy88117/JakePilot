@@ -62,11 +62,13 @@ def main() -> int:
 
     cases = load_cases(args.cases) if args.cases else load_cases()
     if args.formal:
+        code_revision = args.code_revision or _git_revision()
         manifest = FormalEvaluationManifest(
             dataset_version=cases[0].dataset_version,
             model_version=args.model_version,
             prompt_version=args.prompt_version,
             tool_fixture_version=args.tool_fixture_version,
+            code_revision=code_revision,
             repeats=3,
         )
         assessment = FormalEvaluationGate().assess(cases, manifest)

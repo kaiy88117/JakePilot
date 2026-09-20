@@ -20,12 +20,13 @@ FORMAL_CATEGORY_TARGETS = {
     "memory_dependency": 15,
     "safety_exception": 15,
 }
+_UNPINNED_VALUES = {"unknown", "not_pinned", "not_applicable"}
 
 
 class FormalEvaluationManifest(BaseModel):
     """Pinned configuration required before a run can be called formal."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     dataset_version: str = Field(
         pattern=r"^[a-z0-9._-]+-(?:smoke|golden)-v\d+$"
@@ -33,10 +34,14 @@ class FormalEvaluationManifest(BaseModel):
     model_version: str = Field(min_length=1, max_length=128)
     prompt_version: str = Field(min_length=1, max_length=128)
     tool_fixture_version: str = Field(min_length=1, max_length=128)
+    code_revision: str = Field(min_length=1, max_length=128)
     repeats: int = Field(default=3, ge=1, le=10)
 
     @field_validator(
-        "model_version", "prompt_version", "tool_fixture_version"
+        "model_version",
+        "prompt_version",
+        "tool_fixture_version",
+        "code_revision",
     )
     @classmethod
     def reject_blank_version(cls, value: str) -> str:
@@ -65,11 +70,17 @@ class FormalEvaluationGate:
         manifest: FormalEvaluationManifest,
     ) -> FormalGateResult:
         counts = Counter(case.category for case in cases)
+        id_counts = Counter(case.case_id for case in cases)
         errors: list[str] = []
         if "-golden-v" not in manifest.dataset_version:
             errors.append("dataset_version_not_golden")
         if len(cases) < 200:
             errors.append("case_count_below_200")
+        errors.extend(
+            f"duplicate_case_id:{case_id}"
+            for case_id, count in sorted(id_counts.items())
+            if count > 1
+        )
         for category, target in FORMAL_CATEGORY_TARGETS.items():
             actual = counts.get(category, 0)
             if actual < target:
@@ -87,6 +98,14 @@ class FormalEvaluationGate:
         )
         if manifest.repeats != 3:
             errors.append("repeat_count_must_equal_3")
+        for field_name in (
+            "model_version",
+            "prompt_version",
+            "tool_fixture_version",
+            "code_revision",
+        ):
+            if getattr(manifest, field_name).lower() in _UNPINNED_VALUES:
+                errors.append(f"unpinned_{field_name}")
 
         return FormalGateResult(
             eligible=not errors,
