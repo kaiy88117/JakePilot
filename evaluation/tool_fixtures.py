@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from agents.appointment.appointment_database import AppointmentDatabase
+from agents.appointment.technician_finder import TechnicianFinder
+from db.models import TechnicianSchedule
+from services.appointment_service import AppointmentService
 from services.hermesrag_client import (
     HermesRagError,
     KnowledgeCitation,
     KnowledgeResult,
 )
+from services.user_behavior_service import UserBehaviorService
 
 
 class KnowledgeToolFixture(BaseModel):
@@ -28,11 +34,49 @@ class KnowledgeToolFixture(BaseModel):
     ]
 
 
+class TechnicianToolFixture(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=64)
+    gender: str | None = Field(default=None, max_length=16)
+    strength: str | None = Field(default=None, max_length=256)
+
+
+class AppointmentScheduleFixture(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    technician_name: str = Field(min_length=1, max_length=64)
+    start_time: datetime
+    end_time: datetime
+    status: Literal["busy", "free"]
+
+    @model_validator(mode="after")
+    def validate_interval(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("appointment schedule end must be after start")
+        return self
+
+
+class AppointmentToolFixture(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    technicians: tuple[TechnicianToolFixture, ...] = ()
+    schedules: tuple[AppointmentScheduleFixture, ...] = ()
+
+    @model_validator(mode="after")
+    def reject_duplicate_technicians(self):
+        names = [item.name for item in self.technicians]
+        if len(set(names)) != len(names):
+            raise ValueError("duplicate fixture technician")
+        return self
+
+
 class CaseToolFixture(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     case_id: str = Field(min_length=1, max_length=128)
     knowledge: KnowledgeToolFixture | None = None
+    appointment: AppointmentToolFixture | None = None
 
 
 class ToolFixtureCatalog(BaseModel):
@@ -90,4 +134,93 @@ class FrozenKnowledgeClient:
             pipeline_status=snapshot.pipeline_status,
             terminal_reason=snapshot.terminal_reason,
             evidence_sufficiency=snapshot.evidence_sufficiency,
+        )
+
+
+class AppointmentFixtureResources:
+    """Injected appointment services plus an evaluation write counter."""
+
+    def __init__(
+        self,
+        *,
+        appointment_service: AppointmentService,
+        user_behavior_service: UserBehaviorService,
+        initial_appointment_count: int,
+    ) -> None:
+        self.appointment_service = appointment_service
+        self.user_behavior_service = user_behavior_service
+        self.appointment_database = AppointmentDatabase(
+            appointment_service=appointment_service,
+            user_behavior_service=user_behavior_service,
+        )
+        self.technician_finder = TechnicianFinder(
+            appointment_service=appointment_service
+        )
+        self.initial_appointment_count = initial_appointment_count
+        self._closed = False
+
+    def write_count(self) -> int:
+        current = _appointment_count(self.appointment_service)
+        return max(0, current - self.initial_appointment_count)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self.appointment_service.close()
+        self.user_behavior_service.close()
+
+
+def seed_appointment_tool_fixture(
+    database_url: str,
+    case_fixture: CaseToolFixture | None,
+) -> AppointmentFixtureResources:
+    if case_fixture is None or case_fixture.appointment is None:
+        raise ValueError("appointment fixture is unavailable")
+    appointment_service = AppointmentService(database_url)
+    user_behavior_service = UserBehaviorService(database_url)
+    snapshot = case_fixture.appointment
+    try:
+        for technician in snapshot.technicians:
+            technician_id = appointment_service.add_technician(
+                technician.name,
+                technician.gender,
+                technician.strength,
+            )
+            if technician_id is None:
+                raise ValueError("appointment technician fixture could not be seeded")
+
+        for schedule in snapshot.schedules:
+            technician = appointment_service.get_technician_by_name(
+                schedule.technician_name
+            )
+            if technician is None:
+                raise ValueError(
+                    "appointment schedule references unknown technician"
+                )
+            appointment_service.technician_repo.add_schedule(
+                technician_id=technician["id"],
+                start_time=schedule.start_time,
+                end_time=schedule.end_time,
+                status=schedule.status,
+            )
+
+        return AppointmentFixtureResources(
+            appointment_service=appointment_service,
+            user_behavior_service=user_behavior_service,
+            initial_appointment_count=_appointment_count(appointment_service),
+        )
+    except Exception:
+        appointment_service.close()
+        user_behavior_service.close()
+        raise
+
+
+def _appointment_count(service: AppointmentService) -> int:
+    manager = service.technician_repo.session_manager
+    with manager.session_scope() as session:
+        return int(
+            session.query(TechnicianSchedule)
+            .filter(TechnicianSchedule.appointment_id.isnot(None))
+            .count()
         )

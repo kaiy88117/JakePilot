@@ -69,6 +69,9 @@ class UserBehaviorService:
         except Exception as e:
             logger.error(f"更新用户偏好失败：{e}")
             return False
+
+    def close(self) -> None:
+        self.db_router.close()
     
     def analyze_user_patterns(self, user_id: str) -> Dict[str, Any]:
         """分析用户行为模式"""

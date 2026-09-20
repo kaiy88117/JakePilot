@@ -100,6 +100,9 @@ class AppointmentService:
         except Exception as e:
             logger.error(f"添加技师失败：{e}")
             return None
+
+    def close(self) -> None:
+        self.db_router.close()
     
     def get_all_strengths(self) -> List[str]:
         """获取所有技师的专长列表"""
