@@ -118,6 +118,13 @@
             const count = Number.isInteger(payload.citation_count) ? payload.citation_count : 0;
             return { title: "完成知识检索", detail: `${mode} · ${evidence} · ${count} 条引用` };
         }
+        if (event === "memory_context") {
+            const parts = [];
+            if (payload.working_loaded) parts.push("恢复工作状态");
+            parts.push(`${Number(payload.episodic_count) || 0} 条历史事件`);
+            parts.push(`${Number(payload.profile_count) || 0} 条偏好`);
+            return { title: "装配任务上下文", detail: parts.join(" · ") };
+        }
         return null;
     }
 
@@ -197,7 +204,7 @@
         } else if (event === "route_selected") {
             currentRoute.textContent = payload.label;
             appendTimeline("完成任务路由", payload.label);
-        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required" || event === "knowledge_retrieval") {
+        } else if (event === "tool_started" || event === "tool_finished" || event === "confirmation_required" || event === "input_required" || event === "knowledge_retrieval" || event === "memory_context") {
             const description = describeRuntimeEvent(event, payload);
             if (description) appendTimeline(description.title, description.detail);
         } else if (event === "answer_delta") {

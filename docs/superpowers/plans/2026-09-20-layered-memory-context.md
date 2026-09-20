@@ -41,9 +41,9 @@
 **Interfaces:**
 - Produces: `MemoryManager.save/get/clear_working`、`record/recall_event`、`set/recall_profile`。
 
-- [ ] 先写失败测试，覆盖隔离、过期、事件排序、Profile 覆盖和敏感字段拒绝。
-- [ ] 实现最小 SQLAlchemy 模型、Repository 与 Manager。
-- [ ] 运行记忆测试并提交 `feat: add layered memory manager`。
+- [x] 先写失败测试，覆盖隔离、过期、事件排序、Profile 覆盖和敏感字段拒绝。
+- [x] 实现最小 SQLAlchemy 模型、Repository 与 Manager。
+- [x] 运行记忆测试并提交 `feat: add layered memory manager`。
 
 ### Task 2: Context Engine 与预算投影
 
@@ -55,9 +55,9 @@
 - Consumes: Task 1 的三层读取接口。
 - Produces: `ContextEngine.build(...) -> ContextProjection`，每个 Segment 含来源、信任级别、注入原因和估算 Token。
 
-- [ ] 先写失败测试，覆盖领域筛选、最多 3+3、过期过滤和预算裁剪顺序。
-- [ ] 实现确定性 Context Engine，不调用 LLM。
-- [ ] 运行测试并提交 `feat: build bounded context projections`。
+- [x] 先写失败测试，覆盖领域筛选、最多 3+3、过期过滤和预算裁剪顺序。
+- [x] 实现确定性 Context Engine，不调用 LLM。
+- [x] 运行测试并提交 `feat: build bounded context projections`。
 
 ### Task 3: 订单售后任务恢复与 Trace
 
@@ -76,10 +76,10 @@
 - Consumes: `MemoryManager` 与 `ContextEngine`。
 - Produces: 可跨 Agent 实例恢复的退货草稿/待确认状态、完成事件，以及脱敏 `memory_context` SSE 摘要。
 
-- [ ] 先写失败测试，验证草稿恢复、过期不恢复、用户隔离、确认前回源和完成后清理。
-- [ ] 注入共享 Memory Manager；持久化结构化草稿，不保存完整对话。
-- [ ] 公开仅含召回数量与类型的 `memory_context` 事件并更新前端。
-- [ ] 更新文档，运行维护套件与全量测试，提交 `feat: persist layered task memory`。
+- [x] 先写失败测试，验证草稿恢复、过期不恢复、用户隔离、确认前回源和完成后清理。
+- [x] 注入共享 Memory Manager；持久化结构化草稿，不保存完整对话。
+- [x] 公开仅含召回数量与类型的 `memory_context` 事件并更新前端。
+- [x] 更新文档，运行维护套件与全量测试，提交 `feat: persist layered task memory`。
 
 ## Completion Gate
 

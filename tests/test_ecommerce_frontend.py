@@ -217,7 +217,10 @@ const fallback = describeRuntimeEvent('knowledge_retrieval', {{
   mode: 'local', pipeline_status: 'degraded', evidence_sufficiency: 'not_evaluated',
   citation_count: 0, fallback: true
 }});
-process.stdout.write(JSON.stringify({{ grounded, fallback }}));
+const memory = describeRuntimeEvent('memory_context', {{
+  working_loaded: true, episodic_count: 2, profile_count: 1, dropped_count: 0
+}});
+process.stdout.write(JSON.stringify({{ grounded, fallback, memory }}));
 """
     result = subprocess.run(
         ["node", "-e", node_program],
@@ -235,5 +238,9 @@ process.stdout.write(JSON.stringify({{ grounded, fallback }}));
         "fallback": {
             "title": "知识服务降级",
             "detail": "已切换本地知识库",
+        },
+        "memory": {
+            "title": "装配任务上下文",
+            "detail": "恢复工作状态 · 2 条历史事件 · 1 条偏好",
         },
     }

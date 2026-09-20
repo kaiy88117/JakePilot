@@ -11,7 +11,14 @@ from sqlalchemy.engine import make_url
 
 from config.database import DatabaseConfig
 from db.base.session_manager import SessionManager
-from db.models import ActionExecution, AfterSalesRequest, Order
+from db.models import (
+    ActionExecution,
+    AfterSalesRequest,
+    MemoryEvent,
+    Order,
+    UserProfileMemory,
+    WorkingState,
+)
 
 
 DEMO_TENANT_ID = "demo"
@@ -50,6 +57,30 @@ def reset_demo_state(database_url: str) -> dict[str, int]:
                 )
                 .delete(synchronize_session=False)
             )
+            working_count = (
+                session.query(WorkingState)
+                .filter(
+                    WorkingState.tenant_id == DEMO_TENANT_ID,
+                    WorkingState.user_id == DEMO_USER_ID,
+                )
+                .delete(synchronize_session=False)
+            )
+            event_count = (
+                session.query(MemoryEvent)
+                .filter(
+                    MemoryEvent.tenant_id == DEMO_TENANT_ID,
+                    MemoryEvent.user_id == DEMO_USER_ID,
+                )
+                .delete(synchronize_session=False)
+            )
+            profile_count = (
+                session.query(UserProfileMemory)
+                .filter(
+                    UserProfileMemory.tenant_id == DEMO_TENANT_ID,
+                    UserProfileMemory.user_id == DEMO_USER_ID,
+                )
+                .delete(synchronize_session=False)
+            )
             return_window_refreshed = (
                 session.query(Order)
                 .filter(
@@ -69,6 +100,9 @@ def reset_demo_state(database_url: str) -> dict[str, int]:
         return {
             "after_sales_requests": request_count,
             "action_executions": action_count,
+            "working_states": working_count,
+            "memory_events": event_count,
+            "profile_memories": profile_count,
             "return_window_refreshed": return_window_refreshed,
         }
     finally:
@@ -97,6 +131,9 @@ def main() -> int:
         "演示数据已重置："
         f"退货申请 {result['after_sales_requests']} 条，"
         f"执行记录 {result['action_executions']} 条，"
+        f"工作记忆 {result['working_states']} 条，"
+        f"事件记忆 {result['memory_events']} 条，"
+        f"用户偏好 {result['profile_memories']} 条，"
         f"退货时效刷新 {result['return_window_refreshed']} 条。"
     )
     print("除指定演示订单的签收时间外，订单、物流、知识库、预约及其他租户/用户数据未修改。")

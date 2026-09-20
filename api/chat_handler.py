@@ -10,11 +10,14 @@ from agents.consultant_agent import ConsultantAgent
 from agents.task_classification_agent import TaskClassificationAgent
 from agents.order_after_sales_agent import OrderAfterSalesAgent
 from config.database import db_config
+from runtime.context_engine import ContextEngine
+from services.memory_manager import MemoryManager
 from services.order_after_sales_service import OrderAfterSalesService
 
 
 LEGACY_SESSION_ID = "legacy-default"
 _order_after_sales_service: OrderAfterSalesService | None = None
+_memory_manager: MemoryManager | None = None
 
 
 def _get_order_after_sales_service() -> OrderAfterSalesService:
@@ -24,6 +27,13 @@ def _get_order_after_sales_service() -> OrderAfterSalesService:
         service.seed_demo_data()
         _order_after_sales_service = service
     return _order_after_sales_service
+
+
+def _get_memory_manager() -> MemoryManager:
+    global _memory_manager
+    if _memory_manager is None:
+        _memory_manager = MemoryManager(db_config.connection_string)
+    return _memory_manager
 
 
 class SessionRegistryFull(RuntimeError):
@@ -39,12 +49,15 @@ class _SessionEntry:
 
 def _create_task_agent(session_id: str) -> TaskClassificationAgent:
     """Create one stateful agent graph for a single browser session."""
+    memory_manager = _get_memory_manager()
     return TaskClassificationAgent(
         AppointmentAgent(session_id=session_id),
         ConsultantAgent(session_id=session_id),
         OrderAfterSalesAgent(
             session_id=session_id,
             service=_get_order_after_sales_service(),
+            memory_manager=memory_manager,
+            context_engine=ContextEngine(memory_manager),
         ),
     )
 

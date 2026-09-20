@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from runtime.contracts import RuntimeEvent, TurnRequest, TurnStatus
+from runtime.context_engine import ContextEngine
 from runtime.ecommerce_tools import register_ecommerce_tools
 from runtime.loop import BoundedAgentRuntime, PlanAction
 from runtime.tools import (
@@ -16,6 +17,7 @@ from runtime.tools import (
     canonical_payload_hash,
 )
 from services.order_after_sales_service import OrderAfterSalesService
+from services.memory_manager import MemoryManager
 
 
 _ORDER_PATTERN = re.compile(r"JP\d{11}", re.IGNORECASE)
@@ -57,8 +59,7 @@ class _OrderPlanner:
                 )
             if self.mode == "confirmed_return":
                 return PlanAction.tool(
-                    "return.create",
-                    {"order_id": self.order_id, "reason": self.reason},
+                    "return.check", {"order_id": self.order_id}
                 )
             return PlanAction.tool("order.get", {"order_id": self.order_id})
 
@@ -69,6 +70,19 @@ class _OrderPlanner:
             return PlanAction.answer_now(result.public_message or "暂时无法完成该请求")
 
         if self.mode == "return" and history[-1][0].tool_name == "return.check":
+            if not result.data.get("eligible"):
+                return PlanAction.answer_now(
+                    _eligibility_message(result.data.get("reason", ""))
+                )
+            return PlanAction.tool(
+                "return.create",
+                {"order_id": self.order_id, "reason": self.reason},
+            )
+
+        if (
+            self.mode == "confirmed_return"
+            and history[-1][0].tool_name == "return.check"
+        ):
             if not result.data.get("eligible"):
                 return PlanAction.answer_now(
                     _eligibility_message(result.data.get("reason", ""))
@@ -120,16 +134,23 @@ class OrderAfterSalesAgent:
         service: OrderAfterSalesService,
         tenant_id: str = "demo",
         user_id: str = "user-a",
+        memory_manager: MemoryManager | None = None,
+        context_engine: ContextEngine | None = None,
     ) -> None:
         self.session_id = session_id
         self.service = service
         self.tenant_id = tenant_id
         self.user_id = user_id
+        self.memory_manager = memory_manager
+        self.context_engine = context_engine or (
+            ContextEngine(memory_manager) if memory_manager is not None else None
+        )
         self.pending_action: PendingAction | None = None
         self.return_draft: ReturnDraft | None = None
         registry = ToolRegistry()
         register_ecommerce_tools(registry, service)
         self.runtime = BoundedAgentRuntime(registry)
+        self._restore_working_state()
 
     @property
     def has_pending_action(self) -> bool:
@@ -141,9 +162,14 @@ class OrderAfterSalesAgent:
 
     async def run_stream(self, message: str):
         normalized = message.strip()
+        context_event = self._memory_context_event(normalized)
+        if context_event is not None:
+            yield self._event_token(context_event)
+
         if normalized in {"取消", "取消操作", "不提交"}:
             self.pending_action = None
             self.return_draft = None
+            self._clear_working_state()
             yield "[REPLY][订单售后 Agent]已取消当前待确认操作。"
             return
 
@@ -187,6 +213,10 @@ class OrderAfterSalesAgent:
             )
             if not reason:
                 self.return_draft = ReturnDraft(order_id=order_id)
+                self._save_working_state(
+                    plan_state="collecting_reason",
+                    slots={"order_id": order_id, "reason": ""},
+                )
                 yield self._event_token(
                     RuntimeEvent(
                         type="input_required",
@@ -229,6 +259,16 @@ class OrderAfterSalesAgent:
                 arguments=arguments,
                 payload_hash=canonical_payload_hash(arguments),
                 idempotency_key=f"return-{uuid4().hex}",
+            )
+            self._save_working_state(
+                plan_state="awaiting_confirmation",
+                slots={"order_id": order_id, "reason": reason},
+                pending_action={
+                    "tool_name": self.pending_action.tool_name,
+                    "arguments": self.pending_action.arguments,
+                    "payload_hash": self.pending_action.payload_hash,
+                    "idempotency_key": self.pending_action.idempotency_key,
+                },
             )
             yield self._event_token(
                 RuntimeEvent(
@@ -273,6 +313,20 @@ class OrderAfterSalesAgent:
             yield self._event_token(event)
         if run.outcome.status == TurnStatus.COMPLETED:
             self.pending_action = None
+            self.return_draft = None
+            self._clear_working_state()
+            return_created = any(
+                event.type == "tool_finished"
+                and event.data.get("tool") == "return.create"
+                and event.data.get("status") == "succeeded"
+                for event in run.events
+            )
+            if return_created:
+                self._record_return_event(
+                    order_id=pending.arguments["order_id"],
+                    answer=run.outcome.answer,
+                    trace_id=run.outcome.trace_id,
+                )
         if run.outcome.status == TurnStatus.FAILED:
             yield f"[ERROR]{run.outcome.answer}"
             return
@@ -300,6 +354,115 @@ class OrderAfterSalesAgent:
             turn_id=turn.turn_id,
             idempotency_key=idempotency_key,
             confirmed_payload_hash=confirmed_payload_hash,
+        )
+
+    def _restore_working_state(self) -> None:
+        if self.memory_manager is None:
+            return
+        state = self.memory_manager.get_working(
+            self.tenant_id, self.user_id, self.session_id
+        )
+        if state is None or state.get("active_intent") != "return_request":
+            return
+        slots = state.get("slots") or {}
+        order_id = slots.get("order_id")
+        reason = slots.get("reason") or ""
+        if not isinstance(order_id, str) or _ORDER_PATTERN.fullmatch(order_id) is None:
+            self._clear_working_state()
+            return
+        if state.get("plan_state") == "collecting_reason":
+            self.return_draft = ReturnDraft(order_id=order_id, reason=reason)
+            return
+        if state.get("plan_state") != "awaiting_confirmation":
+            return
+        pending = state.get("pending_action") or {}
+        arguments = pending.get("arguments")
+        if (
+            pending.get("tool_name") != "return.create"
+            or not isinstance(arguments, dict)
+            or arguments.get("order_id") != order_id
+            or arguments.get("reason") != reason
+            or not isinstance(pending.get("payload_hash"), str)
+            or not isinstance(pending.get("idempotency_key"), str)
+        ):
+            self._clear_working_state()
+            return
+        if canonical_payload_hash(arguments) != pending["payload_hash"]:
+            self._clear_working_state()
+            return
+        self.pending_action = PendingAction(
+            tool_name="return.create",
+            arguments=dict(arguments),
+            payload_hash=pending["payload_hash"],
+            idempotency_key=pending["idempotency_key"],
+        )
+
+    def _save_working_state(
+        self,
+        *,
+        plan_state: str,
+        slots: dict,
+        pending_action: dict | None = None,
+    ) -> None:
+        if self.memory_manager is None:
+            return
+        self.memory_manager.save_working(
+            tenant_id=self.tenant_id,
+            user_id=self.user_id,
+            session_id=self.session_id,
+            active_intent="return_request",
+            plan_state=plan_state,
+            slots=slots,
+            pending_action=pending_action,
+        )
+
+    def _clear_working_state(self) -> None:
+        if self.memory_manager is not None:
+            self.memory_manager.clear_working(
+                self.tenant_id, self.user_id, self.session_id
+            )
+
+    def _memory_context_event(self, message: str) -> RuntimeEvent | None:
+        if self.context_engine is None:
+            return None
+        order_match = _ORDER_PATTERN.search(message.upper())
+        entity_refs = [order_match.group(0).upper()] if order_match else []
+        projection = self.context_engine.build(
+            tenant_id=self.tenant_id,
+            user_id=self.user_id,
+            session_id=self.session_id,
+            current_request=message,
+            target_agent="order_after_sales",
+            entity_refs=entity_refs,
+        )
+        return RuntimeEvent(
+            type="memory_context",
+            data={
+                "working_loaded": projection.working_loaded,
+                "episodic_count": projection.episodic_count,
+                "profile_count": projection.profile_count,
+                "dropped_count": projection.dropped_count,
+            },
+        )
+
+    def _record_return_event(
+        self, *, order_id: str, answer: str, trace_id: str
+    ) -> None:
+        if self.memory_manager is None:
+            return
+        request_match = re.search(r"申请编号为\s*([^。]+)", answer)
+        request_ref = request_match.group(1).strip() if request_match else ""
+        summary = f"订单 {order_id} 已提交退货申请"
+        if request_ref:
+            summary += f"，申请编号 {request_ref}"
+        self.memory_manager.record_event(
+            tenant_id=self.tenant_id,
+            user_id=self.user_id,
+            event_type="return_requested",
+            summary=summary,
+            outcome="completed",
+            entity_refs=[order_id],
+            source_trace_id=trace_id,
         )
 
     @staticmethod

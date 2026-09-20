@@ -28,6 +28,14 @@ _PUBLIC_RUNTIME_FIELDS = {
             "fallback",
         }
     ),
+    "memory_context": frozenset(
+        {
+            "working_loaded",
+            "episodic_count",
+            "profile_count",
+            "dropped_count",
+        }
+    ),
 }
 
 

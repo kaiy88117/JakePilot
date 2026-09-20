@@ -308,3 +308,23 @@ def test_knowledge_event_exposes_only_safe_evidence_summary():
     serialized = json.dumps(events, ensure_ascii=False)
     assert "PRIVATE_TOKEN" not in serialized
     assert "PRIVATE_PROMPT" not in serialized
+
+
+def test_memory_context_event_only_exposes_aggregate_fields():
+    events = _collect(
+        _tokens(
+            '[EVENT]{"type":"memory_context","data":{"working_loaded":true,"episodic_count":2,"profile_count":1,"dropped_count":3,"segments":[{"content":"private"}]}}',
+            "[REPLY][订单售后 Agent]已恢复任务",
+        ),
+        "turn-memory",
+    )
+
+    memory = next(payload for name, payload in events if name == "memory_context")
+    assert memory == {
+        "turn_id": "turn-memory",
+        "working_loaded": True,
+        "episodic_count": 2,
+        "profile_count": 1,
+        "dropped_count": 3,
+    }
+    assert "private" not in json.dumps(events, ensure_ascii=False)

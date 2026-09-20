@@ -98,3 +98,22 @@ def test_registry_never_evicts_a_busy_session():
         assert registry.get("session-b").session_id == "session-b"
 
     asyncio.run(verify())
+
+
+def test_default_agent_factory_injects_shared_memory(monkeypatch, tmp_path):
+    import api.chat_handler as chat_handler
+    from services.memory_manager import MemoryManager
+    from services.order_after_sales_service import OrderAfterSalesService
+
+    database_url = f"sqlite:///{(tmp_path / 'factory.db').as_posix()}"
+    service = OrderAfterSalesService(database_url)
+    service.seed_demo_data()
+    memory = MemoryManager(database_url)
+    monkeypatch.setattr(chat_handler, "_get_order_after_sales_service", lambda: service)
+    monkeypatch.setattr(chat_handler, "_get_memory_manager", lambda: memory)
+
+    task_agent = chat_handler._create_task_agent("session-memory")
+    order_agent = task_agent.order_after_sales_agent
+
+    assert order_agent.memory_manager is memory
+    assert order_agent.context_engine.memory_manager is memory

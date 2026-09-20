@@ -9,6 +9,9 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 - 统一 Turn、Outcome 与 Trace 契约，以及最多 6 步、8 次工具调用、2 次重规划的有界执行循环。
 - `order.get`、`logistics.get`、`return.check`、`return.create` 四个 Schema 工具，使用匿名 SQLite 演示数据完成订单查询、物流追踪和退货办理。
 - 写操作二次确认、参数冻结、Action Ledger 幂等保护，以及按会话隔离的待确认操作。
+- Working、Episodic、Profile 三层业务记忆，以及按租户/用户/会话隔离、30 分钟过期的任务恢复。
+- 统一 Context Engine 按领域、来源和 Token 预算装配上下文；最多注入 3 条历史事件与 3 条偏好，不用记忆替代订单实时数据。
+- 退货草稿和待确认动作可跨 Agent 实例恢复；确认时再次调用 `return.check` 回源，通过后才允许 `return.create` 写入。
 - 上门安装或维修的多轮信息补全、工程师匹配、时间检查与 SQLite 写入。
 - `/api/chat/stream` 结构化 SSE 协议，过滤内部思维标记，只公开路由、工具状态、确认请求、回答和终止事件。
 - 电商售后工作台首页，支持快捷问题、流式回答、运行时间线和移动端布局。
@@ -16,7 +19,6 @@ JakePilot 正在从通用预约示例改造为电商售后多 Agent 服务平台
 
 ## 规划中
 
-- Working、Episodic、Profile 三层记忆与 Context Engine。
 - Checkpoint、异常恢复及轨迹级评测。
 - 面向预约槽位抽取与下一动作选择的本地小模型后训练。
 
@@ -33,7 +35,8 @@ SSE 安全适配层
 Task Classification Agent
    ├─ Consultation Agent → HermesRAG Knowledge Tool → 回答 / 引用 / 证据状态
    │                         └─ 不可用时回退本地 FAISS
-   ├─ Order After-sales Agent → 有界 Loop → 订单/物流/退货工具
+   ├─ Order After-sales Agent → Context Engine → 有界 Loop → 订单/物流/退货工具
+   │                              └─ Working / Episodic / Profile Memory
    └─ Appointment Agent       → 槽位补全 → 可用性检查 → 预约写入
 ```
 
@@ -74,17 +77,17 @@ JakePilot 通过 `/auth/login` 获取短期 Token，再调用非流式 `/chat`�
 
 - `耳机保修期多久？`（HermesRAG 开启时，时间线展示模式、证据状态和引用数）
 - `帮我查询订单 JP20260919001 的物流`
-- `申请退货 JP20260919002，原因是商品破损`，随后回复 `确认提交`
+- `申请退货 JP20260919002`，补充 `原因是商品破损`，随后回复 `确认提交`
 - `预约周六上午上门安装空调`
 
-订单号、物流节点和退货记录均为本地匿名演示数据，不连接真实电商系统。当前聊天入口使用演示租户与演示用户身份；演示结果应以实际运行输出为准。
+订单号、物流节点和退货记录均为本地匿名演示数据，不连接真实电商系统。退货多轮状态写入 SQLite，重建 Agent 后仍可恢复；过期状态、其他会话和其他用户均不可恢复。当前聊天入口使用演示租户与演示用户身份；演示结果应以实际运行输出为准。
 
 ## 测试
 
 离线验证运行时、订单售后、SSE 与前端链路：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/test_runtime_contracts.py tests/test_tool_runtime.py tests/test_order_after_sales_tools.py tests/test_order_after_sales_agent.py tests/test_order_after_sales_e2e.py tests/test_stream_protocol.py tests/test_ecommerce_frontend.py -v
+.\.venv\Scripts\python.exe -m pytest tests/test_runtime_contracts.py tests/test_tool_runtime.py tests/test_order_after_sales_tools.py tests/test_order_after_sales_agent.py tests/test_order_after_sales_e2e.py tests/test_order_memory_integration.py tests/test_memory_manager.py tests/test_context_engine.py tests/test_stream_protocol.py tests/test_ecommerce_frontend.py -v
 ```
 
 完整测试：
